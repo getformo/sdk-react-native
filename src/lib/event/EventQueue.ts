@@ -15,6 +15,7 @@ import { IEventQueue } from "./types";
 type QueueItem = {
   message: IFormoEventPayload;
   callback: (...args: unknown[]) => void;
+  hash: string;
 };
 
 type IFormoEventFlushPayload = IFormoEventPayload & {
@@ -160,6 +161,7 @@ export class EventQueue implements IEventQueue {
     this.queue.push({
       message: { ...event, message_id },
       callback,
+      hash: message_id,
     });
 
     logger.log(
@@ -215,7 +217,9 @@ export class EventQueue implements IEventQueue {
     }
 
     const items = this.queue.splice(0, this.flushAt);
-    this.payloadHashes.clear();
+
+    // Only remove hashes for items being flushed, not the entire set
+    items.forEach((item) => this.payloadHashes.delete(item.hash));
 
     const sentAt = new Date().toISOString();
     const data: IFormoEventFlushPayload[] = items.map((item) => ({

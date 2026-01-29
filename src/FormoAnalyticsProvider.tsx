@@ -125,6 +125,10 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
     onErrorRef.current = onError;
   }, [onError]);
 
+  // Extract wagmi config references for dependency tracking
+  const wagmiConfig = options?.wagmi?.config;
+  const wagmiQueryClient = options?.wagmi?.queryClient;
+
   // Create stable key from options (excluding callbacks and non-serializable values)
   const optionsKey = useMemo(() => {
     if (!options) return "undefined";
@@ -139,7 +143,6 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
       maxQueueSize: options.maxQueueSize,
       logger: options.logger,
       app: options.app,
-      hasWagmi: !!options.wagmi,
       hasReady: !!options.ready,
     };
 
@@ -203,7 +206,8 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
     };
     // Note: onReady and onError are NOT in the dependency array
     // They are accessed via refs to prevent re-initialization
-  }, [writeKey, optionsKey, asyncStorage]);
+    // wagmiConfig and wagmiQueryClient are tracked separately since they're not serializable
+  }, [writeKey, optionsKey, asyncStorage, wagmiConfig, wagmiQueryClient]);
 
   return (
     <FormoAnalyticsContext.Provider value={sdk}>
