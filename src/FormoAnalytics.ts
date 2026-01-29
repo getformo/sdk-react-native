@@ -20,11 +20,7 @@ import {
   getConsentFlag,
   removeConsentFlag,
 } from "./lib/consent";
-import {
-  FormoAnalyticsSession,
-  SESSION_WALLET_DETECTED_KEY,
-  SESSION_WALLET_IDENTIFIED_KEY,
-} from "./lib/session";
+import { FormoAnalyticsSession } from "./lib/session";
 import { WagmiEventHandler } from "./lib/wagmi";
 import {
   Address,
@@ -166,14 +162,13 @@ export class FormoAnalytics implements IFormoAnalytics {
     this.currentUserId = undefined;
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
     storage().remove(SESSION_USER_ID_KEY);
-    storage().remove(SESSION_WALLET_DETECTED_KEY);
-    storage().remove(SESSION_WALLET_IDENTIFIED_KEY);
+    this.session.clear();
   }
 
   /**
    * Clean up resources
    */
-  public cleanup(): void {
+  public async cleanup(): Promise<void> {
     logger.info("FormoAnalytics: Cleaning up resources");
 
     if (this.wagmiHandler) {
@@ -182,7 +177,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     }
 
     if (this.eventQueue) {
-      this.eventQueue.cleanup();
+      await this.eventQueue.cleanup();
     }
 
     logger.info("FormoAnalytics: Cleanup complete");
