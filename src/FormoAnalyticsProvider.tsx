@@ -125,25 +125,33 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
     onErrorRef.current = onError;
   }, [onError]);
 
-  // Extract wagmi config references for dependency tracking
+  // Extract individual option values to avoid reference equality issues with options object
+  const tracking = options?.tracking;
+  const autocapture = options?.autocapture;
+  const apiHost = options?.apiHost;
+  const flushAt = options?.flushAt;
+  const flushInterval = options?.flushInterval;
+  const retryCount = options?.retryCount;
+  const maxQueueSize = options?.maxQueueSize;
+  const loggerOption = options?.logger;
+  const app = options?.app;
+  const hasReady = !!options?.ready;
   const wagmiConfig = options?.wagmi?.config;
   const wagmiQueryClient = options?.wagmi?.queryClient;
 
-  // Create stable key from options (excluding callbacks and non-serializable values)
+  // Create stable key from serializable options
   const optionsKey = useMemo(() => {
-    if (!options) return "undefined";
-
     const serializableOptions = {
-      tracking: options.tracking,
-      autocapture: options.autocapture,
-      apiHost: options.apiHost,
-      flushAt: options.flushAt,
-      flushInterval: options.flushInterval,
-      retryCount: options.retryCount,
-      maxQueueSize: options.maxQueueSize,
-      logger: options.logger,
-      app: options.app,
-      hasReady: !!options.ready,
+      tracking,
+      autocapture,
+      apiHost,
+      flushAt,
+      flushInterval,
+      retryCount,
+      maxQueueSize,
+      logger: loggerOption,
+      app,
+      hasReady,
     };
 
     try {
@@ -152,7 +160,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
       logger.warn("Failed to serialize options, using timestamp", error);
       return Date.now().toString();
     }
-  }, [options]);
+  }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, hasReady]);
 
   useEffect(() => {
     let isCleanedUp = false;

@@ -176,7 +176,12 @@ export class EventQueue implements IEventQueue {
       ) >= this.maxQueueSize;
 
     if (hasReachedFlushAt || hasReachedQueueSize) {
-      this.flush();
+      // Wait for any pending flush before starting a new one to prevent race conditions
+      if (this.pendingFlush) {
+        this.pendingFlush.then(() => this.flush()).catch(() => this.flush());
+      } else {
+        this.flush();
+      }
       return;
     }
 
@@ -218,9 +223,6 @@ export class EventQueue implements IEventQueue {
 
     const items = this.queue.splice(0, this.flushAt);
 
-    // Only remove hashes for items being flushed, not the entire set
-    items.forEach((item) => this.payloadHashes.delete(item.hash));
-
     const sentAt = new Date().toISOString();
     const data: IFormoEventFlushPayload[] = items.map((item) => ({
       ...item.message,
@@ -236,12 +238,16 @@ export class EventQueue implements IEventQueue {
 
     this.pendingFlush = this.sendWithRetry(data)
       .then(() => {
+        // Only remove hashes after successful send
+        items.forEach((item) => this.payloadHashes.delete(item.hash));
         done();
         logger.info(`Events sent successfully: ${data.length} events`);
       })
       .catch((err) => {
+        // Re-add items to the front of the queue for retry on next flush
+        this.queue.unshift(...items);
         done(err);
-        logger.error("Error sending events:", err);
+        logger.error("Error sending events, re-queued for retry:", err);
         throw err; // Re-throw to propagate error to caller
       })
       .finally(() => {

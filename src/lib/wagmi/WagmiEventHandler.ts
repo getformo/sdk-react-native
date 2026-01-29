@@ -58,10 +58,10 @@ export class WagmiEventHandler {
     isProcessing: false,
   };
   private processedMutations = new Set<string>();
-  private pendingStatusChange: {
+  private pendingStatusChanges: Array<{
     status: WagmiState["status"];
     prevStatus: WagmiState["status"];
-  } | null = null;
+  }> = [];
 
   constructor(
     formoAnalytics: IFormoAnalyticsInstance,
@@ -120,8 +120,8 @@ export class WagmiEventHandler {
     prevStatus: WagmiState["status"]
   ): Promise<void> {
     if (this.trackingState.isProcessing) {
-      // Queue the latest status change to process after current one completes
-      this.pendingStatusChange = { status, prevStatus };
+      // Queue all status changes to process after current one completes
+      this.pendingStatusChanges.push({ status, prevStatus });
       logger.debug(
         "WagmiEventHandler: Queuing status change for later processing"
       );
@@ -178,10 +178,9 @@ export class WagmiEventHandler {
     } finally {
       this.trackingState.isProcessing = false;
 
-      // Process any pending status change that arrived during processing
-      if (this.pendingStatusChange) {
-        const pending = this.pendingStatusChange;
-        this.pendingStatusChange = null;
+      // Process all pending status changes that arrived during processing
+      if (this.pendingStatusChanges.length > 0) {
+        const pending = this.pendingStatusChanges.shift()!;
         await this.handleStatusChange(pending.status, pending.prevStatus);
       }
     }
@@ -194,7 +193,8 @@ export class WagmiEventHandler {
     chainId: number | undefined,
     prevChainId: number | undefined
   ): Promise<void> {
-    if (chainId === prevChainId || chainId === undefined) {
+    // Skip if no change, chainId is undefined, or this is initial connection (prevChainId undefined)
+    if (chainId === prevChainId || chainId === undefined || prevChainId === undefined) {
       return;
     }
 
@@ -391,10 +391,10 @@ export class WagmiEventHandler {
     const chainId =
       this.trackingState.lastChainId ||
       (variables.chainId as number | undefined);
+    // Only use variables.account as fallback, not variables.address which is the contract address
     const address =
       this.trackingState.lastAddress ||
-      (variables.account as string | undefined) ||
-      (variables.address as string | undefined);
+      (variables.account as string | undefined);
 
     if (!address) {
       logger.warn(

@@ -13,13 +13,29 @@ export function isUndefined(value: unknown): value is undefined {
 }
 
 /**
+ * Convert a camelCase/PascalCase string to snake_case
+ * Handles consecutive uppercase letters (acronyms) correctly:
+ * - "userID" -> "user_id"
+ * - "XMLParser" -> "xml_parser"
+ * - "getHTTPResponse" -> "get_http_response"
+ */
+function camelToSnake(str: string): string {
+  return str
+    // Insert underscore before sequences of uppercase followed by lowercase (e.g., "XMLParser" -> "XML_Parser")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    // Insert underscore before single uppercase preceded by lowercase (e.g., "userID" -> "user_ID")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
+/**
  * Convert object keys to snake_case (recursively handles nested objects and arrays)
  */
 export function toSnakeCase<T extends Record<string, unknown>>(obj: T): T {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+    const snakeKey = camelToSnake(key);
 
     if (Array.isArray(value)) {
       // Recursively convert objects inside arrays

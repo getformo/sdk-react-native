@@ -93,14 +93,16 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.info("User has previously opted out of tracking");
     }
 
-    // Initialize Wagmi handler if provided
-    if (options.wagmi) {
+    // Initialize Wagmi handler if provided and config is valid
+    if (options.wagmi?.config) {
       logger.info("FormoAnalytics: Initializing in Wagmi mode");
       this.wagmiHandler = new WagmiEventHandler(
         this,
         options.wagmi.config,
         options.wagmi.queryClient
       );
+    } else if (options.wagmi) {
+      logger.warn("FormoAnalytics: wagmi option provided but config is missing");
     }
   }
 
