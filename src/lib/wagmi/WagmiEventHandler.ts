@@ -139,6 +139,27 @@ export class WagmiEventHandler {
     this.trackingState.isProcessing = true;
 
     try {
+      // Process current status change
+      await this.processStatusChange(status, prevStatus);
+
+      // Process pending status changes iteratively (inline, no recursion)
+      while (this.pendingStatusChanges.length > 0) {
+        const pending = this.pendingStatusChanges.shift()!;
+        await this.processStatusChange(pending.status, pending.prevStatus);
+      }
+    } finally {
+      this.trackingState.isProcessing = false;
+    }
+  }
+
+  /**
+   * Process a single status change (extracted for iterative processing)
+   */
+  private async processStatusChange(
+    status: WagmiState["status"],
+    prevStatus: WagmiState["status"]
+  ): Promise<void> {
+    try {
       const state = this.getState();
       const address = this.getConnectedAddress(state);
       const chainId = state.chainId;
@@ -183,14 +204,6 @@ export class WagmiEventHandler {
       this.trackingState.lastStatus = status;
     } catch (error) {
       logger.error("WagmiEventHandler: Error handling status change:", error);
-    } finally {
-      this.trackingState.isProcessing = false;
-    }
-
-    // Process pending status changes iteratively to avoid stack overflow
-    while (this.pendingStatusChanges.length > 0) {
-      const pending = this.pendingStatusChanges.shift()!;
-      await this.handleStatusChange(pending.status, pending.prevStatus);
     }
   }
 
