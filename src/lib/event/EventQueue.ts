@@ -258,7 +258,7 @@ export class EventQueue implements IEventQueue {
         const shouldRetry = this.shouldRetry(response.status);
         if (shouldRetry && attempt < this.retryCount) {
           const delay = Math.pow(2, attempt) * 1000;
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
           return this.sendWithRetry(data, attempt + 1);
         }
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -267,7 +267,7 @@ export class EventQueue implements IEventQueue {
       if (isNetworkError(error) && attempt < this.retryCount) {
         const delay = Math.pow(2, attempt) * 1000;
         logger.warn(`Network error, retrying in ${delay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
         return this.sendWithRetry(data, attempt + 1);
       }
       throw error;

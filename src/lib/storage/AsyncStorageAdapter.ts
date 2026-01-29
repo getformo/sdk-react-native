@@ -9,7 +9,6 @@ import { logger } from "../logger";
 class AsyncStorageAdapter extends StorageBlueprint {
   private asyncStorage: AsyncStorageInterface | null = null;
   private cache: Map<string, string> = new Map();
-  private initialized: boolean = false;
 
   constructor(writeKey: string, asyncStorage?: AsyncStorageInterface) {
     super(writeKey);
@@ -49,7 +48,6 @@ class AsyncStorageAdapter extends StorageBlueprint {
       logger.error("AsyncStorageAdapter: Failed to preload keys", error);
     }
 
-    this.initialized = true;
     logger.debug("AsyncStorageAdapter: Initialized");
   }
 
