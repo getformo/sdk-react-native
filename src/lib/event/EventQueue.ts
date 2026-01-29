@@ -61,8 +61,8 @@ export class EventQueue implements IEventQueue {
   private flushIntervalMs: number;
   private maxQueueSize: number;
   private retryCount: number;
-  private pendingFlush: Promise<unknown> | null = null;
   private payloadHashes: Set<string> = new Set();
+  private flushMutex: Promise<void> = Promise.resolve();
   private appStateSubscription: { remove: () => void } | null = null;
 
   constructor(writeKey: string, options: Options) {
@@ -176,12 +176,8 @@ export class EventQueue implements IEventQueue {
       ) >= this.maxQueueSize;
 
     if (hasReachedFlushAt || hasReachedQueueSize) {
-      // Wait for any pending flush before starting a new one to prevent race conditions
-      if (this.pendingFlush) {
-        this.pendingFlush.then(() => this.flush()).catch(() => this.flush());
-      } else {
-        this.flush();
-      }
+      // Flush uses internal mutex to serialize operations
+      this.flush();
       return;
     }
 
@@ -192,6 +188,8 @@ export class EventQueue implements IEventQueue {
 
   /**
    * Flush events to API
+   * Uses a mutex to ensure only one flush operation runs at a time,
+   * preventing race conditions with re-queued items on failure.
    */
   async flush(callback?: (...args: unknown[]) => void): Promise<void> {
     callback = callback || noop;
@@ -201,63 +199,55 @@ export class EventQueue implements IEventQueue {
       this.timer = null;
     }
 
-    if (!this.queue.length) {
-      callback();
-      return;
-    }
+    // Use mutex to serialize flush operations and prevent race conditions
+    const previousMutex = this.flushMutex;
+    let resolveMutex: () => void;
+    this.flushMutex = new Promise((resolve) => {
+      resolveMutex = resolve;
+    });
 
-    // Wait for pending flush
-    if (this.pendingFlush) {
-      try {
-        await this.pendingFlush;
-      } catch {
-        this.pendingFlush = null;
+    try {
+      // Wait for any previous flush to complete
+      await previousMutex;
+
+      if (!this.queue.length) {
+        callback();
+        return;
       }
-    }
 
-    // Re-check queue after waiting - it may have been drained by the pending flush
-    if (!this.queue.length) {
-      callback();
-      return;
-    }
+      const items = this.queue.splice(0, this.flushAt);
 
-    const items = this.queue.splice(0, this.flushAt);
+      const sentAt = new Date().toISOString();
+      const data: IFormoEventFlushPayload[] = items.map((item) => ({
+        ...item.message,
+        sent_at: sentAt,
+      }));
 
-    const sentAt = new Date().toISOString();
-    const data: IFormoEventFlushPayload[] = items.map((item) => ({
-      ...item.message,
-      sent_at: sentAt,
-    }));
+      const done = (err?: Error) => {
+        items.forEach(({ message, callback: itemCallback }) =>
+          itemCallback(err, message, data)
+        );
+        callback!(err, data);
+      };
 
-    const done = (err?: Error) => {
-      items.forEach(({ message, callback: itemCallback }) =>
-        itemCallback(err, message, data)
-      );
-      callback!(err, data);
-    };
-
-    this.pendingFlush = this.sendWithRetry(data)
-      .then(() => {
+      try {
+        await this.sendWithRetry(data);
         // Only remove hashes after successful send
         items.forEach((item) => this.payloadHashes.delete(item.hash));
         done();
         logger.info(`Events sent successfully: ${data.length} events`);
-      })
-      .catch((err) => {
+      } catch (err) {
         // Re-add items to the front of the queue for retry on next flush
         // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
-        // events from being enqueued while these items are pending retry. The re-queued
-        // items already have their hashes tracked, so they will be sent on next flush.
+        // events from being enqueued while these items are pending retry.
         this.queue.unshift(...items);
-        done(err);
+        done(err as Error);
         logger.error("Error sending events, re-queued for retry:", err);
-        throw err; // Re-throw to propagate error to caller
-      })
-      .finally(() => {
-        this.pendingFlush = null;
-      });
-
-    return this.pendingFlush as Promise<void>;
+        throw err;
+      }
+    } finally {
+      resolveMutex!();
+    }
   }
 
   /**

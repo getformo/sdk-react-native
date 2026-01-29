@@ -546,6 +546,7 @@ export class WagmiEventHandler {
 
     this.unsubscribers = [];
     this.processedMutations.clear();
+    this.pendingStatusChanges = [];
     logger.info("WagmiEventHandler: Cleanup complete");
   }
 }

@@ -143,11 +143,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    if (!this.shouldTrack()) {
-      logger.info("Screen: Skipping event due to tracking configuration");
-      return;
-    }
-
+    // Note: shouldTrack() is called in trackEvent() - no need to check here
     await this.trackEvent(
       EventType.SCREEN,
       { name },

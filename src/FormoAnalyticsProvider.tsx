@@ -111,12 +111,13 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
     storageInitKeyRef.current = writeKey;
   }
 
-  // Store callbacks in refs to avoid re-initialization when they change
+  // Store callbacks and options in refs to avoid re-initialization when references change
   // This fixes the issue where inline arrow functions cause repeated SDK init
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
+  const optionsRef = useRef(options);
 
-  // Update refs when callbacks change (without triggering effect)
+  // Update refs when values change (without triggering effect)
   useEffect(() => {
     onReadyRef.current = onReady;
   }, [onReady]);
@@ -124,6 +125,10 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   // Extract individual option values to avoid reference equality issues with options object
   const tracking = options?.tracking;
@@ -175,9 +180,10 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
       }
 
       try {
+        // Use optionsRef.current to ensure we have the latest options
         const sdkInstance = await FormoAnalytics.init(
           writeKey,
-          options,
+          optionsRef.current,
           asyncStorage
         );
 
