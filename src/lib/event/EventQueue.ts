@@ -208,6 +208,12 @@ export class EventQueue implements IEventQueue {
       }
     }
 
+    // Re-check queue after waiting - it may have been drained by the pending flush
+    if (!this.queue.length) {
+      callback();
+      return;
+    }
+
     const items = this.queue.splice(0, this.flushAt);
     this.payloadHashes.clear();
 

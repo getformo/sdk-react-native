@@ -17,7 +17,7 @@ const defaultContext: IFormoAnalytics = {
   chain: () => Promise.resolve(),
   screen: () => Promise.resolve(),
   reset: () => {},
-  cleanup: () => {},
+  cleanup: () => Promise.resolve(),
   detect: () => Promise.resolve(),
   connect: () => Promise.resolve(),
   disconnect: () => Promise.resolve(),
@@ -155,10 +155,10 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
     let isCleanedUp = false;
 
     const initialize = async () => {
-      // Clean up existing SDK
+      // Clean up existing SDK and await flush completion
       if (sdkRef.current && sdkRef.current !== defaultContext) {
         logger.log("Cleaning up existing FormoAnalytics SDK instance");
-        sdkRef.current.cleanup();
+        await sdkRef.current.cleanup();
         sdkRef.current = defaultContext;
         setSdk(defaultContext);
       }
@@ -179,7 +179,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
           onReadyRef.current?.(sdkInstance);
         } else {
           logger.log("Component unmounted during initialization, cleaning up");
-          sdkInstance.cleanup();
+          await sdkInstance.cleanup();
         }
       } catch (error) {
         if (!isCleanedUp) {
