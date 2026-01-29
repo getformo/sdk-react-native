@@ -112,6 +112,9 @@ export class WagmiEventHandler {
     logger.info("WagmiEventHandler: Connection listeners set up successfully");
   }
 
+  // Maximum pending status changes to prevent unbounded queue growth
+  private static readonly MAX_PENDING_STATUS_CHANGES = 10;
+
   /**
    * Handle status changes (connect/disconnect)
    */
@@ -120,7 +123,12 @@ export class WagmiEventHandler {
     prevStatus: WagmiState["status"]
   ): Promise<void> {
     if (this.trackingState.isProcessing) {
-      // Queue all status changes to process after current one completes
+      // Limit queue size to prevent unbounded growth during rapid status changes
+      if (this.pendingStatusChanges.length >= WagmiEventHandler.MAX_PENDING_STATUS_CHANGES) {
+        logger.warn("WagmiEventHandler: Pending status change queue full, dropping oldest");
+        this.pendingStatusChanges.shift();
+      }
+      // Queue status change to process after current one completes
       this.pendingStatusChanges.push({ status, prevStatus });
       logger.debug(
         "WagmiEventHandler: Queuing status change for later processing"
@@ -177,12 +185,12 @@ export class WagmiEventHandler {
       logger.error("WagmiEventHandler: Error handling status change:", error);
     } finally {
       this.trackingState.isProcessing = false;
+    }
 
-      // Process all pending status changes that arrived during processing
-      if (this.pendingStatusChanges.length > 0) {
-        const pending = this.pendingStatusChanges.shift()!;
-        await this.handleStatusChange(pending.status, pending.prevStatus);
-      }
+    // Process pending status changes iteratively to avoid stack overflow
+    while (this.pendingStatusChanges.length > 0) {
+      const pending = this.pendingStatusChanges.shift()!;
+      await this.handleStatusChange(pending.status, pending.prevStatus);
     }
   }
 

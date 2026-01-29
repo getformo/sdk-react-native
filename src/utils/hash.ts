@@ -1,18 +1,16 @@
+import { sha256 } from "ethereum-cryptography/sha256";
+import { utf8ToBytes, bytesToHex } from "ethereum-cryptography/utils";
+
 /**
- * Generate a hash for event deduplication
+ * Generate a SHA-256 hash for event deduplication
+ * Uses first 16 hex chars (64 bits) for balance of collision resistance and storage
  */
 export async function hash(input: string): Promise<string> {
-  // Simple hash function for React Native
-  let h = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    h = ((h << 5) - h) + char;
-    h = h & h; // Convert to 32bit integer
-  }
-
-  // Convert to hex and pad
-  const hex = Math.abs(h).toString(16).padStart(8, "0");
-  return hex;
+  const bytes = utf8ToBytes(input);
+  const hashBytes = sha256(bytes);
+  const hex = bytesToHex(hashBytes);
+  // Use first 16 chars (64 bits) - provides ~2^32 events before 50% collision probability
+  return hex.slice(0, 16);
 }
 
 /**

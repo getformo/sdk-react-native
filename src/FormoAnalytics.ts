@@ -203,21 +203,23 @@ export class FormoAnalytics implements IFormoAnalytics {
       return;
     }
 
-    this.currentChainId = chainId;
     const checksummedAddress = this.validateAndChecksumAddress(address);
     if (!checksummedAddress) {
       logger.warn(`Connect: Invalid address provided ("${address}")`);
       return;
     }
-    this.currentAddress = checksummedAddress;
 
+    // Track event before updating state so connect events TO excluded chains are tracked
     await this.trackEvent(
       EventType.CONNECT,
-      { chainId, address: this.currentAddress },
+      { chainId, address: checksummedAddress },
       properties,
       context,
       callback
     );
+
+    this.currentChainId = chainId;
+    this.currentAddress = checksummedAddress;
   }
 
   /**
@@ -274,8 +276,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       return;
     }
 
-    this.currentChainId = chainId;
-
+    // Track event before updating currentChainId so shouldTrack uses the previous chain
+    // This ensures chain change events TO excluded chains are still tracked
     await this.trackEvent(
       EventType.CHAIN,
       { chainId, address: address || this.currentAddress },
@@ -283,6 +285,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       context,
       callback
     );
+
+    this.currentChainId = chainId;
   }
 
   /**
@@ -522,6 +526,8 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /**
    * Internal method to track events
+   * This is the single enforcement point for shouldTrack() - all public tracking
+   * methods (track, screen, connect, etc.) route through here
    */
   private async trackEvent(
     type: TEventType,
