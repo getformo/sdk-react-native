@@ -242,6 +242,7 @@ export class EventQueue implements IEventQueue {
       .catch((err) => {
         done(err);
         logger.error("Error sending events:", err);
+        throw err; // Re-throw to propagate error to caller
       })
       .finally(() => {
         this.pendingFlush = null;

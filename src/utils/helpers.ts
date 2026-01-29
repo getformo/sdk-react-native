@@ -13,7 +13,7 @@ export function isUndefined(value: unknown): value is undefined {
 }
 
 /**
- * Convert object keys to snake_case
+ * Convert object keys to snake_case (recursively handles nested objects and arrays)
  */
 export function toSnakeCase<T extends Record<string, unknown>>(obj: T): T {
   const result: Record<string, unknown> = {};
@@ -21,7 +21,14 @@ export function toSnakeCase<T extends Record<string, unknown>>(obj: T): T {
   for (const [key, value] of Object.entries(obj)) {
     const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
 
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    if (Array.isArray(value)) {
+      // Recursively convert objects inside arrays
+      result[snakeKey] = value.map((item) =>
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? toSnakeCase(item as Record<string, unknown>)
+          : item
+      );
+    } else if (value !== null && typeof value === "object") {
       result[snakeKey] = toSnakeCase(value as Record<string, unknown>);
     } else {
       result[snakeKey] = value;

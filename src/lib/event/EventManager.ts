@@ -36,7 +36,7 @@ class EventManager implements IEventManager {
       return;
     }
 
-    this.eventQueue.enqueue(formoEvent, (err, _, data) => {
+    await this.eventQueue.enqueue(formoEvent, (err, _, data) => {
       if (err) {
         logger.error("Error sending events:", err);
       } else {

@@ -28,9 +28,11 @@ class AsyncStorageAdapter extends StorageBlueprint {
     // This is critical for consent checks on cold start (GDPR compliance)
     try {
       const allKeys = await asyncStorage.getAllKeys();
-      const formoPrefix = this.getKey("").slice(0, -1); // Get prefix without trailing key
+      // getKey("") returns "formo_rn_{writeKey}_" - use this exact prefix
+      // to avoid matching keys from other instances (e.g., "abc" matching "abc123")
+      const formoPrefix = this.getKey("");
 
-      // Filter to only our keys
+      // Filter to only our keys (exact prefix match including trailing underscore)
       const formoKeys = allKeys.filter((key) => key.startsWith(formoPrefix));
 
       if (formoKeys.length > 0) {

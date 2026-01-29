@@ -58,6 +58,10 @@ export class WagmiEventHandler {
     isProcessing: false,
   };
   private processedMutations = new Set<string>();
+  private pendingStatusChange: {
+    status: WagmiState["status"];
+    prevStatus: WagmiState["status"];
+  } | null = null;
 
   constructor(
     formoAnalytics: IFormoAnalyticsInstance,
@@ -116,8 +120,10 @@ export class WagmiEventHandler {
     prevStatus: WagmiState["status"]
   ): Promise<void> {
     if (this.trackingState.isProcessing) {
+      // Queue the latest status change to process after current one completes
+      this.pendingStatusChange = { status, prevStatus };
       logger.debug(
-        "WagmiEventHandler: Already processing status change, skipping"
+        "WagmiEventHandler: Queuing status change for later processing"
       );
       return;
     }
@@ -171,6 +177,13 @@ export class WagmiEventHandler {
       logger.error("WagmiEventHandler: Error handling status change:", error);
     } finally {
       this.trackingState.isProcessing = false;
+
+      // Process any pending status change that arrived during processing
+      if (this.pendingStatusChange) {
+        const pending = this.pendingStatusChange;
+        this.pendingStatusChange = null;
+        await this.handleStatusChange(pending.status, pending.prevStatus);
+      }
     }
   }
 
