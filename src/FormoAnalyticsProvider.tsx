@@ -208,7 +208,12 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
 
       if (sdkRef.current && sdkRef.current !== defaultContext) {
         logger.log("Cleaning up FormoAnalytics SDK instance");
-        sdkRef.current.cleanup();
+        // Note: React cleanup functions cannot be async. We start the cleanup
+        // (which flushes pending events) but cannot await it. For re-initialization,
+        // cleanup is properly awaited in the initialize function above.
+        sdkRef.current.cleanup().catch((error) => {
+          logger.error("Error during SDK cleanup:", error);
+        });
         sdkRef.current = defaultContext;
       }
     };
@@ -249,8 +254,12 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
 export const useFormo = (): IFormoAnalytics => {
   const context = useContext(FormoAnalyticsContext);
 
-  if (!context) {
-    logger.warn("useFormo called without a valid context");
+  // Check if SDK has been initialized (context will be defaultContext before init completes)
+  if (context === defaultContext) {
+    logger.warn(
+      "useFormo called before SDK initialization complete. " +
+        "Ensure FormoAnalyticsProvider is mounted and writeKey is provided."
+    );
   }
 
   return context;
