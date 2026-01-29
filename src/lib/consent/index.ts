@@ -2,24 +2,12 @@ import { storage } from "../storage";
 import { logger } from "../logger";
 
 /**
- * Simple synchronous hash function for writeKey
+ * Get consent storage key
+ * Note: The storage adapter already prefixes keys with formo_rn_{writeKey}_
+ * so we just need a simple consent prefix here
  */
-function hashWriteKey(writeKey: string): string {
-  let h = 0;
-  for (let i = 0; i < writeKey.length; i++) {
-    const char = writeKey.charCodeAt(i);
-    h = (h << 5) - h + char;
-    h = h & h; // Convert to 32bit integer
-  }
-  return Math.abs(h).toString(16).padStart(8, "0");
-}
-
-/**
- * Get a hashed key for consent storage
- */
-function getConsentKey(writeKey: string, key: string): string {
-  const hashedKey = hashWriteKey(writeKey);
-  return `consent_${hashedKey}_${key}`;
+function getConsentKey(_writeKey: string, key: string): string {
+  return `consent_${key}`;
 }
 
 /**

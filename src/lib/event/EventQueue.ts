@@ -245,6 +245,9 @@ export class EventQueue implements IEventQueue {
       })
       .catch((err) => {
         // Re-add items to the front of the queue for retry on next flush
+        // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
+        // events from being enqueued while these items are pending retry. The re-queued
+        // items already have their hashes tracked, so they will be sent on next flush.
         this.queue.unshift(...items);
         done(err);
         logger.error("Error sending events, re-queued for retry:", err);
