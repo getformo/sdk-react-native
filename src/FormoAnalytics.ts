@@ -297,7 +297,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       signatureHash,
     }: {
       status: SignatureStatus;
-      chainId?: ChainID;
+      chainId: ChainID;
       address: Address;
       message: string;
       signatureHash?: string;
@@ -306,6 +306,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    if (chainId === null || chainId === undefined || Number(chainId) === 0) {
+      logger.warn("Signature: Chain ID cannot be null, undefined, or 0");
+      return;
+    }
+    if (!address) {
+      logger.warn("Signature: Address cannot be empty");
+      return;
+    }
     await this.trackEvent(
       EventType.SIGNATURE,
       {

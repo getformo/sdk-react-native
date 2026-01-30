@@ -52,7 +52,7 @@ export interface IFormoAnalytics {
   signature(
     params: {
       status: SignatureStatus;
-      chainId?: ChainID;
+      chainId: ChainID;
       address: Address;
       message: string;
       signatureHash?: string;

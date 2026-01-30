@@ -30,7 +30,7 @@ interface IFormoAnalyticsInstance {
   chain(params: { chainId: number; address?: string }): Promise<void>;
   signature(params: {
     status: SignatureStatus;
-    chainId?: number;
+    chainId: number;
     address: string;
     message: string;
     signatureHash?: string;
