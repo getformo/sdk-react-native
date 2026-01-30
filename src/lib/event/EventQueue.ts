@@ -315,12 +315,15 @@ export class EventQueue implements IEventQueue {
    * Clean up resources, flushing any pending events first
    */
   public async cleanup(): Promise<void> {
-    // Flush any remaining queued events before teardown
-    if (this.queue.length > 0) {
+    // Flush all remaining queued events before teardown
+    // Loop until queue is empty since flush() only sends flushAt events per call
+    while (this.queue.length > 0) {
       try {
         await this.flush();
       } catch (error) {
         logger.error("EventQueue: Failed to flush during cleanup", error);
+        // Break on error to avoid infinite loop if flush keeps failing
+        break;
       }
     }
 
