@@ -29,7 +29,19 @@ function camelToSnake(str: string): string {
 }
 
 /**
+ * Check if value is a plain object (not Date, Map, Set, RegExp, etc.)
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
  * Convert object keys to snake_case (recursively handles nested objects and arrays)
+ * Preserves Date, Map, Set, RegExp, and other built-in objects unchanged
  */
 export function toSnakeCase<T extends Record<string, unknown>>(obj: T): T {
   const result: Record<string, unknown> = {};
@@ -38,15 +50,14 @@ export function toSnakeCase<T extends Record<string, unknown>>(obj: T): T {
     const snakeKey = camelToSnake(key);
 
     if (Array.isArray(value)) {
-      // Recursively convert objects inside arrays
+      // Recursively convert plain objects inside arrays
       result[snakeKey] = value.map((item) =>
-        item !== null && typeof item === "object" && !Array.isArray(item)
-          ? toSnakeCase(item as Record<string, unknown>)
-          : item
+        isPlainObject(item) ? toSnakeCase(item) : item
       );
-    } else if (value !== null && typeof value === "object") {
-      result[snakeKey] = toSnakeCase(value as Record<string, unknown>);
+    } else if (isPlainObject(value)) {
+      result[snakeKey] = toSnakeCase(value);
     } else {
+      // Preserve Date, Map, Set, RegExp, and other built-in objects unchanged
       result[snakeKey] = value;
     }
   }
