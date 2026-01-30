@@ -177,7 +177,9 @@ export class EventQueue implements IEventQueue {
 
     if (hasReachedFlushAt || hasReachedQueueSize) {
       // Flush uses internal mutex to serialize operations
-      this.flush();
+      this.flush().catch((error) => {
+        logger.error("EventQueue: Failed to flush on threshold", error);
+      });
       return;
     }
 
