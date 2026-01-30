@@ -353,6 +353,13 @@ export class WagmiEventHandler {
       return;
     }
 
+    if (!chainId || chainId === 0) {
+      logger.warn(
+        "WagmiEventHandler: Signature event but no valid chainId available"
+      );
+      return;
+    }
+
     try {
       let status: SignatureStatus;
       let signatureHash: string | undefined;
