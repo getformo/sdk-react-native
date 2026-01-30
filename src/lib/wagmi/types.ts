@@ -11,7 +11,10 @@ export interface WagmiState {
       chainId: number;
       connector: {
         name: string;
+        /** Connector ID - for EIP-6963 injected wallets, this is typically the rdns */
         id: string;
+        type?: string;
+        icon?: string;
       };
     }
   >;
