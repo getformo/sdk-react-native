@@ -190,8 +190,8 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    if (chainId === null || chainId === undefined) {
-      logger.warn("Connect: Chain ID cannot be null or undefined");
+    if (chainId === null || chainId === undefined || Number(chainId) === 0) {
+      logger.warn("Connect: Chain ID cannot be null, undefined, or 0");
       return;
     }
     if (!address) {
@@ -346,6 +346,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    if (chainId === null || chainId === undefined || Number(chainId) === 0) {
+      logger.warn("Transaction: Chain ID cannot be null, undefined, or 0");
+      return;
+    }
+    if (!address) {
+      logger.warn("Transaction: Address cannot be empty");
+      return;
+    }
     await this.trackEvent(
       EventType.TRANSACTION,
       {

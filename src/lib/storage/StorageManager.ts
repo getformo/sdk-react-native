@@ -35,12 +35,14 @@ export class StorageManager {
     if (!this.storages.has(type)) {
       const storage = this.createStorage(type);
 
-      // If storage is not available, fallback to memory
+      // If storage is not available, fallback to memory and cache the fallback
       if (!storage.isAvailable() && type !== "memoryStorage") {
         logger.warn(
           `Storage ${type} is not available, falling back to memoryStorage`
         );
-        return this.getStorage("memoryStorage");
+        const fallback = this.getStorage("memoryStorage");
+        this.storages.set(type, fallback);
+        return fallback;
       }
 
       this.storages.set(type, storage);
