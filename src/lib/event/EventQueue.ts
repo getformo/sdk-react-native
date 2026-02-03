@@ -176,6 +176,11 @@ export class EventQueue implements IEventQueue {
       ) >= this.maxQueueSize;
 
     if (hasReachedFlushAt || hasReachedQueueSize) {
+      // Clear timer to prevent double flush
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
       // Flush uses internal mutex to serialize operations
       this.flush().catch((error) => {
         logger.error("EventQueue: Failed to flush on threshold", error);

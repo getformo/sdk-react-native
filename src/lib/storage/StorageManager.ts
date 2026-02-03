@@ -85,6 +85,10 @@ let storageManagerInstance: StorageManager | null = null;
  */
 export function initStorageManager(writeKey: string): StorageManager {
   if (!storageManagerInstance || storageManagerInstance["writeKey"] !== writeKey) {
+    // Clean up old instance before creating new one
+    if (storageManagerInstance) {
+      logger.debug("StorageManager: Replacing instance with new writeKey");
+    }
     storageManagerInstance = new StorageManager(writeKey);
   }
   return storageManagerInstance;

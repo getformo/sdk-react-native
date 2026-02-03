@@ -154,6 +154,35 @@ export class FormoAnalytics implements IFormoAnalytics {
   }
 
   /**
+   * Set traffic source from deep link URL
+   * Parses UTM parameters and referrer information from URL
+   * This is automatically persisted for the session
+   *
+   * @param url - Deep link URL (e.g., "myapp://product?utm_source=facebook&ref=friend123")
+   *
+   * @example
+   * ```tsx
+   * import { Linking } from 'react-native';
+   *
+   * // Listen for deep links
+   * Linking.addEventListener('url', (event) => {
+   *   formo.setTrafficSourceFromUrl(event.url);
+   * });
+   *
+   * // Or get initial URL
+   * Linking.getInitialURL().then((url) => {
+   *   if (url) formo.setTrafficSourceFromUrl(url);
+   * });
+   * ```
+   */
+  public setTrafficSourceFromUrl(url: string): void {
+    const { parseTrafficSource, storeTrafficSource } = require("./utils/trafficSource");
+    const trafficSource = parseTrafficSource(url);
+    storeTrafficSource(trafficSource);
+    logger.debug("Traffic source set from URL:", trafficSource);
+  }
+
+  /**
    * Reset the current user session
    */
   public reset(): void {
@@ -400,10 +429,11 @@ export class FormoAnalytics implements IFormoAnalytics {
       let validAddress: Address | undefined = undefined;
       if (address) {
         validAddress = this.validateAndChecksumAddress(address);
-        this.currentAddress = validAddress || undefined;
         if (!validAddress) {
-          logger.warn("Invalid address provided to identify:", address);
+          logger.warn(`Identify: Invalid address provided ("${address}")`);
+          return;
         }
+        this.currentAddress = validAddress;
       } else {
         this.currentAddress = undefined;
       }

@@ -1,4 +1,6 @@
 import { Platform, NativeModules, Dimensions } from "react-native";
+import DeviceInfo from "react-native-device-info";
+import NetInfo from "@react-native-community/netinfo";
 import { COUNTRY_LIST, LOCAL_ANONYMOUS_ID_KEY, CHANNEL, VERSION } from "../../constants";
 import {
   Address,
@@ -17,6 +19,7 @@ import {
   getValidAddress,
   toSnakeCase,
   mergeDeepRight,
+  getStoredTrafficSource,
 } from "../../utils";
 import { getCurrentTimeFormatted } from "../../utils/timestamp";
 import { generateUUID } from "../../utils/hash";
@@ -125,28 +128,87 @@ class EventFactory implements IEventFactory {
   }
 
   /**
+   * Get network information
+   */
+  private async getNetworkInfo(): Promise<{
+    network_wifi?: boolean;
+    network_cellular?: boolean;
+    network_carrier?: string;
+  }> {
+    try {
+      const netState = await NetInfo.fetch();
+
+      const networkInfo: {
+        network_wifi?: boolean;
+        network_cellular?: boolean;
+        network_carrier?: string;
+      } = {};
+
+      // Set connection type flags
+      if (netState.type === "wifi") {
+        networkInfo.network_wifi = true;
+        networkInfo.network_cellular = false;
+      } else if (netState.type === "cellular") {
+        networkInfo.network_wifi = false;
+        networkInfo.network_cellular = true;
+
+        // Get carrier name for cellular connections
+        if (netState.details && "carrier" in netState.details) {
+          networkInfo.network_carrier = netState.details.carrier || undefined;
+        }
+      } else {
+        // Other types (ethernet, bluetooth, wimax, vpn, other, unknown, none)
+        networkInfo.network_wifi = false;
+        networkInfo.network_cellular = false;
+      }
+
+      return networkInfo;
+    } catch (error) {
+      logger.debug("Error getting network info:", error);
+      return {};
+    }
+  }
+
+  /**
    * Get device information
    */
-  private getDeviceInfo(): {
+  private async getDeviceInfo(): Promise<{
     os_name: string;
     os_version: string;
     device_model: string;
+    device_manufacturer: string;
+    device_name: string;
     device_type: string;
-  } {
+    user_agent: string;
+  }> {
     try {
+      const [model, manufacturer, deviceName, userAgent, isTablet] = await Promise.all([
+        DeviceInfo.getModel(),
+        DeviceInfo.getManufacturer(),
+        DeviceInfo.getDeviceName(),
+        DeviceInfo.getUserAgent(),
+        DeviceInfo.isTablet(),
+      ]);
+
       return {
         os_name: Platform.OS,
-        os_version: String(Platform.Version),
-        device_model: Platform.select({ ios: "iOS Device", android: "Android Device" }) || "Unknown",
-        device_type: "mobile",
+        os_version: DeviceInfo.getSystemVersion(),
+        device_model: model,
+        device_manufacturer: manufacturer,
+        device_name: deviceName,
+        device_type: isTablet ? "tablet" : "mobile",
+        user_agent: userAgent,
       };
     } catch (error) {
       logger.error("Error getting device info:", error);
       return {
-        os_name: "unknown",
-        os_version: "unknown",
-        device_model: "unknown",
+        os_name: Platform.OS,
+        os_version: String(Platform.Version),
+        device_model: "Unknown",
+        device_manufacturer: "Unknown",
+        device_name: "Unknown Device",
         device_type: "mobile",
+        user_agent: "",
       };
     }
   }
@@ -160,8 +222,12 @@ class EventFactory implements IEventFactory {
     const language = this.getLanguage();
     const timezone = this.getTimezone();
     const location = this.getLocation();
-    const deviceInfo = this.getDeviceInfo();
+    const deviceInfo = await this.getDeviceInfo();
+    const networkInfo = await this.getNetworkInfo();
     const screenInfo = this.getScreen();
+
+    // Get stored traffic source from session (UTM params, referrer from deep links)
+    const storedTrafficSource = getStoredTrafficSource();
 
     const defaultContext: IFormoEventContext = {
       locale: language,
@@ -170,6 +236,7 @@ class EventFactory implements IEventFactory {
       library_name: "Formo React Native SDK",
       library_version: SDK_VERSION,
       ...deviceInfo,
+      ...networkInfo,
       ...screenInfo,
       // App info from options
       ...(this.options?.app && {
@@ -178,6 +245,8 @@ class EventFactory implements IEventFactory {
         app_build: this.options.app.build,
         app_bundle_id: this.options.app.bundleId,
       }),
+      // Traffic source (UTM params, referrer) from session
+      ...(storedTrafficSource || {}),
     };
 
     const mergedContext = mergeDeepRight(

@@ -8,12 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@react-native-community/netinfo':
+        specifier: ^11.5.1
+        version: 11.5.1(react-native@0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1))(react@18.3.1)
       '@tanstack/react-query':
         specifier: '>=5.0.0'
         version: 5.90.20(react@18.3.1)
       ethereum-cryptography:
         specifier: 3.2.0
         version: 3.2.0
+      react-native-device-info:
+        specifier: ^15.0.1
+        version: 15.0.1(react-native@0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1))
       wagmi:
         specifier: '>=2.0.0'
         version: 3.4.1(@tanstack/query-core@5.90.20)(@tanstack/react-query@5.90.20(react@18.3.1))(@types/react@18.3.27)(ox@0.11.3(typescript@5.9.3))(react@18.3.1)(typescript@5.9.3)(viem@2.45.0(typescript@5.9.3))
@@ -856,6 +862,12 @@ packages:
     resolution: {integrity: sha512-7+mOhk+3+X3BjSJZZvYrDJynA00gPYTlvT28ZjiLlbuVGfqfNiBKaxuF7rty+gjjpch4iKGvLhIhSN5cuOsdHQ==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@react-native-community/netinfo@11.5.1':
+    resolution: {integrity: sha512-ZiLvVoNW6fIOZqU99Jdm+dfwv2T76AHifKtEDydPQOkzKg/xLIkSrOEMUigkmlNQu4MeCgFJlrapscbRzU+bKg==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.59'
 
   '@react-native/assets-registry@0.73.1':
     resolution: {integrity: sha512-2FgAbU7uKM5SbbW9QptPPZx8N9Ke2L7bsHb+EhAanZjFZunA9PaYtyjUQ1s7HD+zDVqOQIvjkpXSv7Kejd2tqg==}
@@ -2253,6 +2265,11 @@ packages:
     resolution: {integrity: sha512-ehv2XKS9cvPR5JR7FIpSx3qY7tULkljT2Kb82FBAxXsFLjqlRU1WfqHRLh6lytL2XqAxLQODpPfHUH53SsXnag==}
     engines: {node: '>= 18.0.0'}
     hasBin: true
+
+  react-native-device-info@15.0.1:
+    resolution: {integrity: sha512-U5waZRXtT3l1SgZpZMlIvMKPTkFZPH8W7Ks6GrJhdH723aUIPxjVer7cRSij1mvQdOAAYFJV/9BDzlC8apG89A==}
+    peerDependencies:
+      react-native: '*'
 
   react-native@0.73.11:
     resolution: {integrity: sha512-yvQIX+ZXOHMFnhmwZ1fBpRI/53k+iLN8DxVf24Fx4ABU63RGAYfyCZC0/3W+5OUVx4KSIZUv4Tv+/NGIieBOwg==}
@@ -3885,6 +3902,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  '@react-native-community/netinfo@11.5.1(react-native@0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      react: 18.3.1
+      react-native: 0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1)
+
   '@react-native/assets-registry@0.73.1': {}
 
   '@react-native/babel-plugin-codegen@0.73.4(@babel/preset-env@7.28.6(@babel/core@7.28.6))':
@@ -5463,6 +5485,10 @@ snapshots:
       yargs: 17.7.2
     transitivePeerDependencies:
       - supports-color
+
+  react-native-device-info@15.0.1(react-native@0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1)):
+    dependencies:
+      react-native: 0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1)
 
   react-native@0.73.11(@babel/core@7.28.6)(@babel/preset-env@7.28.6(@babel/core@7.28.6))(react@18.3.1):
     dependencies:

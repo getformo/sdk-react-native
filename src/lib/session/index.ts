@@ -9,7 +9,8 @@ export { SESSION_WALLET_DETECTED_KEY, SESSION_WALLET_IDENTIFIED_KEY };
 
 /**
  * Session manager for tracking wallet detection and identification
- * Uses in-memory state that resets on app restart
+ * Persists to session storage to avoid duplicate detection/identification events
+ * within the same session
  */
 export class FormoAnalyticsSession {
   private detectedWallets: Set<string> = new Set();

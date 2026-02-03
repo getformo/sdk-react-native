@@ -93,6 +93,9 @@ export interface IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void>;
 
+  // Traffic source management
+  setTrafficSourceFromUrl(url: string): void;
+
   // Consent management methods
   optOutTracking(): void;
   optInTracking(): void;
