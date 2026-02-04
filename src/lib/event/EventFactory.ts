@@ -1,6 +1,30 @@
 import { Platform, NativeModules, Dimensions } from "react-native";
-import DeviceInfo from "react-native-device-info";
 import NetInfo from "@react-native-community/netinfo";
+
+// Lazy load device info to handle Expo Go where native modules may not exist
+let DeviceInfo: typeof import("react-native-device-info").default | null = null;
+let ExpoDevice: typeof import("expo-device") | null = null;
+let ExpoApplication: typeof import("expo-application") | null = null;
+
+// Try to load react-native-device-info (works in bare RN and dev builds)
+try {
+  DeviceInfo = require("react-native-device-info").default;
+} catch {
+  // Not available - try Expo alternatives
+}
+
+// Try to load Expo modules (works in Expo Go and Expo dev builds)
+try {
+  ExpoDevice = require("expo-device");
+} catch {
+  // Not available
+}
+
+try {
+  ExpoApplication = require("expo-application");
+} catch {
+  // Not available
+}
 import { COUNTRY_LIST, LOCAL_ANONYMOUS_ID_KEY, CHANNEL, VERSION } from "../../constants";
 import {
   Address,
@@ -171,6 +195,7 @@ class EventFactory implements IEventFactory {
 
   /**
    * Get device information
+   * Supports both react-native-device-info (bare RN) and expo-device/expo-application (Expo Go)
    */
   private async getDeviceInfo(): Promise<{
     os_name: string;
@@ -185,44 +210,72 @@ class EventFactory implements IEventFactory {
     app_build: string;
     app_bundle_id: string;
   }> {
-    try {
-      const [model, manufacturer, deviceName, userAgent, isTablet] = await Promise.all([
-        DeviceInfo.getModel(),
-        DeviceInfo.getManufacturer(),
-        DeviceInfo.getDeviceName(),
-        DeviceInfo.getUserAgent(),
-        DeviceInfo.isTablet(),
-      ]);
+    // Try react-native-device-info first (bare RN and Expo dev builds)
+    if (DeviceInfo) {
+      try {
+        const [model, manufacturer, deviceName, userAgent, isTablet] = await Promise.all([
+          DeviceInfo.getModel(),
+          DeviceInfo.getManufacturer(),
+          DeviceInfo.getDeviceName(),
+          DeviceInfo.getUserAgent(),
+          DeviceInfo.isTablet(),
+        ]);
 
-      return {
-        os_name: Platform.OS,
-        os_version: DeviceInfo.getSystemVersion(),
-        device_model: model,
-        device_manufacturer: manufacturer,
-        device_name: deviceName,
-        device_type: isTablet ? "tablet" : "mobile",
-        user_agent: userAgent,
-        app_name: DeviceInfo.getApplicationName(),
-        app_version: DeviceInfo.getVersion(),
-        app_build: DeviceInfo.getBuildNumber(),
-        app_bundle_id: DeviceInfo.getBundleId(),
-      };
-    } catch (error) {
-      logger.error("Error getting device info:", error);
-      return {
-        os_name: Platform.OS,
-        os_version: String(Platform.Version),
-        device_model: "Unknown",
-        device_manufacturer: "Unknown",
-        device_name: "Unknown Device",
-        device_type: "mobile",
-        user_agent: "",
-        app_name: "",
-        app_version: "",
-        app_build: "",
-        app_bundle_id: "",
-      };
+        return {
+          os_name: Platform.OS,
+          os_version: DeviceInfo.getSystemVersion(),
+          device_model: model,
+          device_manufacturer: manufacturer,
+          device_name: deviceName,
+          device_type: isTablet ? "tablet" : "mobile",
+          user_agent: userAgent,
+          app_name: DeviceInfo.getApplicationName(),
+          app_version: DeviceInfo.getVersion(),
+          app_build: DeviceInfo.getBuildNumber(),
+          app_bundle_id: DeviceInfo.getBundleId(),
+        };
+      } catch (error) {
+        logger.debug("Error using react-native-device-info, falling back:", error);
+      }
     }
+
+    // Fall back to Expo modules (Expo Go)
+    if (ExpoDevice || ExpoApplication) {
+      try {
+        const isTablet = ExpoDevice?.deviceType === ExpoDevice?.DeviceType?.TABLET;
+        return {
+          os_name: ExpoDevice?.osName || Platform.OS,
+          os_version: ExpoDevice?.osVersion || String(Platform.Version),
+          device_model: ExpoDevice?.modelName || "Unknown",
+          device_manufacturer: ExpoDevice?.manufacturer || "Unknown",
+          device_name: ExpoDevice?.deviceName || "Unknown Device",
+          device_type: isTablet ? "tablet" : "mobile",
+          user_agent: "",
+          app_name: ExpoApplication?.applicationName || "",
+          app_version: ExpoApplication?.nativeApplicationVersion || "",
+          app_build: ExpoApplication?.nativeBuildVersion || "",
+          app_bundle_id: ExpoApplication?.applicationId || "",
+        };
+      } catch (error) {
+        logger.debug("Error using Expo device modules:", error);
+      }
+    }
+
+    // Final fallback - minimal info from Platform
+    logger.debug("No device info modules available, using Platform defaults");
+    return {
+      os_name: Platform.OS,
+      os_version: String(Platform.Version),
+      device_model: "Unknown",
+      device_manufacturer: "Unknown",
+      device_name: "Unknown Device",
+      device_type: "mobile",
+      user_agent: "",
+      app_name: "",
+      app_version: "",
+      app_build: "",
+      app_bundle_id: "",
+    };
   }
 
   /**
