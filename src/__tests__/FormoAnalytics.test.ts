@@ -1,47 +1,65 @@
-import { FormoAnalytics } from '../FormoAnalytics';
-import { initStorageManager, storage } from '../lib/storage';
 import { SignatureStatus, TransactionStatus } from '../types';
+
+// Mock instances that persist across tests
+const mockStorageInstance = {
+  get: jest.fn(),
+  set: jest.fn(),
+  remove: jest.fn(),
+  isAvailable: jest.fn(),
+};
+
+const mockStorageManager = {
+  initialize: jest.fn(),
+  getPrimaryStorage: jest.fn(),
+  getStorage: jest.fn(),
+};
+
+const mockEventManager = {
+  addEvent: jest.fn(),
+};
+
+const mockEventQueue = {
+  flush: jest.fn(),
+  clear: jest.fn(),
+  cleanup: jest.fn(),
+};
+
+const mockSession = {
+  isWalletDetected: jest.fn(),
+  isWalletIdentified: jest.fn(),
+  markWalletDetected: jest.fn(),
+  markWalletIdentified: jest.fn(),
+  clear: jest.fn(),
+};
 
 // Mock dependencies
 jest.mock('../lib/storage', () => ({
-  initStorageManager: jest.fn(() => ({
-    initialize: jest.fn().mockResolvedValue(undefined),
-  })),
-  storage: jest.fn(() => ({
-    get: jest.fn().mockReturnValue(null),
-    set: jest.fn(),
-    remove: jest.fn(),
-  })),
+  __esModule: true,
+  initStorageManager: jest.fn(),
+  storage: jest.fn(),
+  getStorageManager: jest.fn(),
 }));
 
 jest.mock('../lib/event', () => ({
-  EventManager: jest.fn().mockImplementation(() => ({
-    addEvent: jest.fn().mockResolvedValue(undefined),
-  })),
-  EventQueue: jest.fn().mockImplementation(() => ({
-    flush: jest.fn().mockResolvedValue(undefined),
-    clear: jest.fn(),
-    cleanup: jest.fn().mockResolvedValue(undefined),
-  })),
+  __esModule: true,
+  EventManager: jest.fn(),
+  EventQueue: jest.fn(),
 }));
 
 jest.mock('../lib/session', () => ({
-  FormoAnalyticsSession: jest.fn().mockImplementation(() => ({
-    isWalletDetected: jest.fn().mockReturnValue(false),
-    isWalletIdentified: jest.fn().mockReturnValue(false),
-    markWalletDetected: jest.fn(),
-    markWalletIdentified: jest.fn(),
-    clear: jest.fn(),
-  })),
+  __esModule: true,
+  FormoAnalyticsSession: jest.fn(),
 }));
 
 jest.mock('../lib/consent', () => ({
+  __esModule: true,
   setConsentFlag: jest.fn(),
-  getConsentFlag: jest.fn().mockReturnValue(null),
+  getConsentFlag: jest.fn(),
   removeConsentFlag: jest.fn(),
 }));
 
 jest.mock('../lib/logger', () => ({
+  __esModule: true,
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -54,12 +72,57 @@ jest.mock('../lib/logger', () => ({
   },
 }));
 
+// Import after mocking
+import { FormoAnalytics } from '../FormoAnalytics';
+import { initStorageManager, storage } from '../lib/storage';
+import { EventManager, EventQueue } from '../lib/event';
+import { FormoAnalyticsSession } from '../lib/session';
+import { setConsentFlag, getConsentFlag, removeConsentFlag } from '../lib/consent';
+
+// Helper to setup all mock implementations
+const setupMocks = () => {
+  // Storage mocks
+  mockStorageInstance.get.mockReturnValue(null);
+  mockStorageInstance.set.mockReturnValue(undefined);
+  mockStorageInstance.remove.mockReturnValue(undefined);
+  mockStorageInstance.isAvailable.mockReturnValue(true);
+
+  mockStorageManager.initialize.mockResolvedValue(undefined);
+  mockStorageManager.getPrimaryStorage.mockReturnValue(mockStorageInstance);
+  mockStorageManager.getStorage.mockReturnValue(mockStorageInstance);
+
+  (initStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
+  (storage as jest.Mock).mockReturnValue(mockStorageInstance);
+
+  // Event mocks
+  mockEventManager.addEvent.mockResolvedValue(undefined);
+  mockEventQueue.flush.mockResolvedValue(undefined);
+  mockEventQueue.clear.mockReturnValue(undefined);
+  mockEventQueue.cleanup.mockResolvedValue(undefined);
+
+  (EventManager as jest.Mock).mockImplementation(() => mockEventManager);
+  (EventQueue as jest.Mock).mockImplementation(() => mockEventQueue);
+
+  // Session mocks
+  mockSession.isWalletDetected.mockReturnValue(false);
+  mockSession.isWalletIdentified.mockReturnValue(false);
+  mockSession.markWalletDetected.mockReturnValue(undefined);
+  mockSession.markWalletIdentified.mockReturnValue(undefined);
+  mockSession.clear.mockReturnValue(undefined);
+
+  (FormoAnalyticsSession as jest.Mock).mockImplementation(() => mockSession);
+
+  // Consent mocks
+  (getConsentFlag as jest.Mock).mockReturnValue(null);
+};
+
 describe('FormoAnalytics', () => {
   let analytics: FormoAnalytics;
   const writeKey = 'test-write-key';
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    // Re-setup mock implementations after clearMocks
+    setupMocks();
     analytics = await FormoAnalytics.init(writeKey);
   });
 
@@ -86,10 +149,6 @@ describe('FormoAnalytics', () => {
         setItem: jest.fn(),
         removeItem: jest.fn(),
       };
-      const mockStorageManager = {
-        initialize: jest.fn().mockResolvedValue(undefined),
-      };
-      (initStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
 
       await FormoAnalytics.init('my-key', {}, mockAsyncStorage as any);
 
@@ -99,40 +158,30 @@ describe('FormoAnalytics', () => {
 
   describe('connect()', () => {
     it('should not track if chainId is null', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.connect({ chainId: null as any, address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2' });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should not track if chainId is 0', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.connect({ chainId: 0, address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2' });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should not track if address is empty', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.connect({ chainId: 1, address: '' });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should not track if address is invalid', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.connect({ chainId: 1, address: 'invalid-address' });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should track valid connect event', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.connect({
         chainId: 1,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
@@ -154,8 +203,6 @@ describe('FormoAnalytics', () => {
 
   describe('disconnect()', () => {
     it('should track disconnect event', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.disconnect();
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
@@ -180,16 +227,12 @@ describe('FormoAnalytics', () => {
     });
 
     it('should not track if chainId is empty', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.chain({ chainId: 0 });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should not track if chainId is invalid', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.chain({ chainId: NaN });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
@@ -197,7 +240,6 @@ describe('FormoAnalytics', () => {
 
     it('should not track if no address is available', async () => {
       analytics.currentAddress = undefined;
-      const mockEventManager = (analytics as any).eventManager;
 
       await analytics.chain({ chainId: 137 });
 
@@ -205,8 +247,6 @@ describe('FormoAnalytics', () => {
     });
 
     it('should track valid chain change event', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.chain({ chainId: 137 });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
@@ -221,8 +261,6 @@ describe('FormoAnalytics', () => {
 
   describe('signature()', () => {
     it('should not track if chainId is invalid', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.signature({
         status: SignatureStatus.REQUESTED,
         chainId: 0,
@@ -234,8 +272,6 @@ describe('FormoAnalytics', () => {
     });
 
     it('should not track if address is empty', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.signature({
         status: SignatureStatus.REQUESTED,
         chainId: 1,
@@ -247,8 +283,6 @@ describe('FormoAnalytics', () => {
     });
 
     it('should track valid signature event', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.signature({
         status: SignatureStatus.CONFIRMED,
         chainId: 1,
@@ -263,8 +297,6 @@ describe('FormoAnalytics', () => {
 
   describe('transaction()', () => {
     it('should not track if chainId is invalid', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.transaction({
         status: TransactionStatus.STARTED,
         chainId: 0,
@@ -275,8 +307,6 @@ describe('FormoAnalytics', () => {
     });
 
     it('should not track if address is empty', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.transaction({
         status: TransactionStatus.STARTED,
         chainId: 1,
@@ -287,8 +317,6 @@ describe('FormoAnalytics', () => {
     });
 
     it('should track valid transaction event', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.transaction({
         status: TransactionStatus.CONFIRMED,
         chainId: 1,
@@ -303,8 +331,6 @@ describe('FormoAnalytics', () => {
 
   describe('track()', () => {
     it('should track custom events', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.track('button_click', { button_id: 'submit' });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
@@ -313,8 +339,6 @@ describe('FormoAnalytics', () => {
 
   describe('screen()', () => {
     it('should track screen views', async () => {
-      const mockEventManager = (analytics as any).eventManager;
-
       await analytics.screen('HomeScreen', { section: 'featured' });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
@@ -327,16 +351,12 @@ describe('FormoAnalytics', () => {
     });
 
     it('should set opt-out flag when optOutTracking is called', async () => {
-      const { setConsentFlag } = require('../lib/consent');
-
       analytics.optOutTracking();
 
       expect(setConsentFlag).toHaveBeenCalled();
     });
 
     it('should remove opt-out flag when optInTracking is called', () => {
-      const { removeConsentFlag } = require('../lib/consent');
-
       analytics.optInTracking();
 
       expect(removeConsentFlag).toHaveBeenCalled();
@@ -386,31 +406,25 @@ describe('FormoAnalytics', () => {
     });
 
     it('should remove storage keys', () => {
-      const mockRemove = storage().remove as jest.Mock;
-
       analytics.reset();
 
-      expect(mockRemove).toHaveBeenCalled();
+      expect(mockStorageInstance.remove).toHaveBeenCalled();
     });
   });
 
   describe('flush()', () => {
     it('should call eventQueue.flush()', async () => {
-      const mockFlush = (analytics as any).eventQueue.flush;
-
       await analytics.flush();
 
-      expect(mockFlush).toHaveBeenCalled();
+      expect(mockEventQueue.flush).toHaveBeenCalled();
     });
   });
 
   describe('cleanup()', () => {
     it('should call eventQueue.cleanup()', async () => {
-      const mockCleanup = (analytics as any).eventQueue.cleanup;
-
       await analytics.cleanup();
 
-      expect(mockCleanup).toHaveBeenCalled();
+      expect(mockEventQueue.cleanup).toHaveBeenCalled();
     });
   });
 });

@@ -289,15 +289,25 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
  * }
  * ```
  */
+// Track if the useFormo warning has been logged to avoid console spam
+let hasLoggedUseFormoWarning = false;
+
 export const useFormo = (): IFormoAnalytics => {
   const context = useContext(FormoAnalyticsContext);
 
   // Check if SDK has been initialized (context will be defaultContext before init completes)
-  if (context === defaultContext) {
+  // Only log the warning once to avoid flooding the console during async initialization
+  if (context === defaultContext && !hasLoggedUseFormoWarning) {
+    hasLoggedUseFormoWarning = true;
     logger.warn(
       "useFormo called before SDK initialization complete. " +
         "Ensure FormoAnalyticsProvider is mounted and writeKey is provided."
     );
+  }
+
+  // Reset the warning flag when SDK is initialized so it can warn again after a reset
+  if (context !== defaultContext) {
+    hasLoggedUseFormoWarning = false;
   }
 
   return context;

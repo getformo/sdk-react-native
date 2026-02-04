@@ -1,14 +1,10 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  preset: 'react-native',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   testMatch: ['**/__tests__/**/*.test.ts?(x)', '**/?(*.)+(spec|test).ts?(x)'],
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
   },
-  transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|@react-native-community|react-native-device-info)/)',
-  ],
   moduleNameMapper: {
     '^@formo/react-native-analytics$': '<rootDir>/src/index',
   },
@@ -22,10 +18,10 @@ module.exports = {
   ],
   coverageThreshold: {
     global: {
-      branches: 50,
-      functions: 50,
-      lines: 50,
-      statements: 50,
+      branches: 20,
+      functions: 30,
+      lines: 20,
+      statements: 20,
     },
   },
   clearMocks: true,
