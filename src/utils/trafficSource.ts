@@ -94,7 +94,7 @@ export function getStoredTrafficSource(): Partial<ITrafficSource> | undefined {
       return JSON.parse(stored) as Partial<ITrafficSource>;
     }
   } catch (error) {
-    logger.debug("No stored traffic source found");
+    logger.debug("Failed to get stored traffic source:", error);
   }
   return undefined;
 }

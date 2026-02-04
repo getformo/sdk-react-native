@@ -1,5 +1,6 @@
 import { FormoAnalytics } from '../FormoAnalytics';
 import { initStorageManager, storage } from '../lib/storage';
+import { SignatureStatus, TransactionStatus } from '../types';
 
 // Mock dependencies
 jest.mock('../lib/storage', () => ({
@@ -223,7 +224,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.signature({
-        status: 'requested',
+        status: SignatureStatus.REQUESTED,
         chainId: 0,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
         message: 'test message',
@@ -236,7 +237,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.signature({
-        status: 'requested',
+        status: SignatureStatus.REQUESTED,
         chainId: 1,
         address: '',
         message: 'test message',
@@ -249,7 +250,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.signature({
-        status: 'signed',
+        status: SignatureStatus.CONFIRMED,
         chainId: 1,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
         message: 'test message',
@@ -265,7 +266,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.transaction({
-        status: 'requested',
+        status: TransactionStatus.STARTED,
         chainId: 0,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
       });
@@ -277,7 +278,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.transaction({
-        status: 'requested',
+        status: TransactionStatus.STARTED,
         chainId: 1,
         address: '',
       });
@@ -289,7 +290,7 @@ describe('FormoAnalytics', () => {
       const mockEventManager = (analytics as any).eventManager;
 
       await analytics.transaction({
-        status: 'confirmed',
+        status: TransactionStatus.CONFIRMED,
         chainId: 1,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
         transactionHash: '0xdef456',

@@ -125,8 +125,8 @@ describe('helper utilities', () => {
     it('should preserve Date objects', () => {
       const date = new Date('2024-01-01');
       const input = { createdAt: date };
-      const result = toSnakeCase(input);
-      expect(result.created_at).toBe(date);
+      const result = toSnakeCase(input) as Record<string, unknown>;
+      expect(result['created_at']).toBe(date);
     });
 
     it('should handle empty objects', () => {
@@ -147,8 +147,8 @@ describe('helper utilities', () => {
     });
 
     it('should merge nested objects deeply', () => {
-      const target = { a: { x: 1, y: 2 }, b: 3 };
-      const source = { a: { y: 3, z: 4 } };
+      const target = { a: { x: 1, y: 2 }, b: 3 } as Record<string, unknown>;
+      const source = { a: { y: 3, z: 4 } } as Record<string, unknown>;
       expect(mergeDeepRight(target, source)).toEqual({
         a: { x: 1, y: 3, z: 4 },
         b: 3,
@@ -156,8 +156,8 @@ describe('helper utilities', () => {
     });
 
     it('should not mutate original objects', () => {
-      const target = { a: 1 };
-      const source = { b: 2 };
+      const target = { a: 1 } as Record<string, unknown>;
+      const source = { b: 2 } as Record<string, unknown>;
       const result = mergeDeepRight(target, source);
       expect(target).toEqual({ a: 1 });
       expect(source).toEqual({ b: 2 });
@@ -171,8 +171,8 @@ describe('helper utilities', () => {
     });
 
     it('should handle null values in source', () => {
-      const target = { a: 1, b: { c: 2 } };
-      const source = { b: null };
+      const target = { a: 1, b: { c: 2 } } as Record<string, unknown>;
+      const source = { b: null } as Record<string, unknown>;
       const result = mergeDeepRight(target, source);
       expect(result.b).toBeNull();
     });

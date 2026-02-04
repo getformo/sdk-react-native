@@ -83,12 +83,20 @@ export const FormoAnalyticsProvider: FC<FormoAnalyticsProviderPropsWithStorage> 
 
   if (!writeKey) {
     logger.error("FormoAnalyticsProvider: No Write Key provided");
-    return <>{children}</>;
+    return (
+      <FormoAnalyticsContext.Provider value={defaultContext}>
+        {children}
+      </FormoAnalyticsContext.Provider>
+    );
   }
 
   if (disabled) {
     logger.warn("FormoAnalytics is disabled");
-    return <>{children}</>;
+    return (
+      <FormoAnalyticsContext.Provider value={defaultContext}>
+        {children}
+      </FormoAnalyticsContext.Provider>
+    );
   }
 
   return <InitializedAnalytics {...props} />;
