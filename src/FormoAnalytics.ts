@@ -52,7 +52,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     public options: Options = {}
   ) {
     this.config = { writeKey };
-    this.options = options;
 
     this.session = new FormoAnalyticsSession();
     this.currentUserId =

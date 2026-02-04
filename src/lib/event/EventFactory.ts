@@ -180,6 +180,10 @@ class EventFactory implements IEventFactory {
     device_name: string;
     device_type: string;
     user_agent: string;
+    app_name: string;
+    app_version: string;
+    app_build: string;
+    app_bundle_id: string;
   }> {
     try {
       const [model, manufacturer, deviceName, userAgent, isTablet] = await Promise.all([
@@ -198,6 +202,10 @@ class EventFactory implements IEventFactory {
         device_name: deviceName,
         device_type: isTablet ? "tablet" : "mobile",
         user_agent: userAgent,
+        app_name: DeviceInfo.getApplicationName(),
+        app_version: DeviceInfo.getVersion(),
+        app_build: DeviceInfo.getBuildNumber(),
+        app_bundle_id: DeviceInfo.getBundleId(),
       };
     } catch (error) {
       logger.error("Error getting device info:", error);
@@ -209,6 +217,10 @@ class EventFactory implements IEventFactory {
         device_name: "Unknown Device",
         device_type: "mobile",
         user_agent: "",
+        app_name: "",
+        app_version: "",
+        app_build: "",
+        app_bundle_id: "",
       };
     }
   }
@@ -238,13 +250,11 @@ class EventFactory implements IEventFactory {
       ...deviceInfo,
       ...networkInfo,
       ...screenInfo,
-      // App info from options
-      ...(this.options?.app && {
-        app_name: this.options.app.name,
-        app_version: this.options.app.version,
-        app_build: this.options.app.build,
-        app_bundle_id: this.options.app.bundleId,
-      }),
+      // App info from options (overrides auto-detected values)
+      ...(this.options?.app?.name && { app_name: this.options.app.name }),
+      ...(this.options?.app?.version && { app_version: this.options.app.version }),
+      ...(this.options?.app?.build && { app_build: this.options.app.build }),
+      ...(this.options?.app?.bundleId && { app_bundle_id: this.options.app.bundleId }),
       // Traffic source (UTM params, referrer) from session
       ...(storedTrafficSource || {}),
     };

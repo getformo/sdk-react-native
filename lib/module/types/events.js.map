@@ -1,1 +1,0 @@
-{"version":3,"names":["SignatureStatus","TransactionStatus"],"sourceRoot":"../../../src","sources":["types/events.ts"],"mappings":"AAyCA;;AAmFA,WAAYA,eAAe,0BAAfA,eAAe;EAAfA,eAAe;EAAfA,eAAe;EAAfA,eAAe;EAAA,OAAfA,eAAe;AAAA;AAM3B,WAAYC,iBAAiB,0BAAjBA,iBAAiB;EAAjBA,iBAAiB;EAAjBA,iBAAiB;EAAjBA,iBAAiB;EAAjBA,iBAAiB;EAAjBA,iBAAiB;EAAA,OAAjBA,iBAAiB;AAAA","ignoreList":[]}
