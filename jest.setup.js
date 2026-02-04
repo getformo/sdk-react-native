@@ -53,7 +53,32 @@ jest.mock('react-native-device-info', () => ({
   getLastUpdateTime: jest.fn().mockResolvedValue(1704067200000),
   getTotalMemory: jest.fn().mockResolvedValue(6000000000),
   getUsedMemory: jest.fn().mockResolvedValue(2000000000),
+  getUserAgent: jest.fn().mockResolvedValue('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'),
 }));
+
+// Mock expo-device (optional peer dependency)
+jest.mock('expo-device', () => ({
+  deviceName: 'Test Device',
+  deviceYearClass: 2023,
+  isDevice: true,
+  brand: 'Apple',
+  manufacturer: 'Apple',
+  modelName: 'iPhone 14',
+  modelId: 'iPhone14,2',
+  osName: 'iOS',
+  osVersion: '17.0',
+  osBuildId: '21A5248v',
+  platformApiLevel: null,
+  deviceType: 1, // PHONE
+}), { virtual: true });
+
+// Mock expo-application (optional peer dependency)
+jest.mock('expo-application', () => ({
+  applicationName: 'Test App',
+  applicationId: 'com.test.app',
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+}), { virtual: true });
 
 // Mock @react-native-community/netinfo
 jest.mock('@react-native-community/netinfo', () => ({
