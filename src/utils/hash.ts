@@ -3,14 +3,12 @@ import { utf8ToBytes, bytesToHex } from "ethereum-cryptography/utils";
 
 /**
  * Generate a SHA-256 hash for event deduplication
- * Uses first 16 hex chars (64 bits) for balance of collision resistance and storage
+ * Returns full 64 hex chars to match web SDK format
  */
 export async function hash(input: string): Promise<string> {
   const bytes = utf8ToBytes(input);
   const hashBytes = sha256(bytes);
-  const hex = bytesToHex(hashBytes);
-  // Use first 16 chars (64 bits) - provides ~2^32 events before 50% collision probability
-  return hex.slice(0, 16);
+  return bytesToHex(hashBytes);
 }
 
 /**
