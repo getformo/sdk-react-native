@@ -105,6 +105,8 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
   const [sdk, setSdk] = useState<IFormoAnalytics>(defaultContext);
   const sdkRef = useRef<IFormoAnalytics>(defaultContext);
   const storageInitKeyRef = useRef<string | null>(null);
+  const cleanupPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const initializationIdRef = useRef<number>(0);
 
   // Only initialize storage manager when writeKey changes, not on every render
   if (storageInitKeyRef.current !== writeKey) {
@@ -169,15 +171,35 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
   }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, hasReady]);
 
   useEffect(() => {
+    // Increment initialization ID to track which initialization is current
+    const currentInitId = ++initializationIdRef.current;
     let isCleanedUp = false;
 
     const initialize = async () => {
+      // Wait for any pending cleanup to complete before re-initializing
+      // This prevents race conditions between cleanup and init
+      await cleanupPromiseRef.current;
+
+      // Check if this initialization is still current after awaiting cleanup
+      if (currentInitId !== initializationIdRef.current || isCleanedUp) {
+        logger.debug("Skipping stale initialization");
+        return;
+      }
+
       // Clean up existing SDK and await flush completion
       if (sdkRef.current && sdkRef.current !== defaultContext) {
         logger.log("Cleaning up existing FormoAnalytics SDK instance");
-        await sdkRef.current.cleanup();
+        const cleanup = sdkRef.current.cleanup();
+        cleanupPromiseRef.current = cleanup;
+        await cleanup;
         sdkRef.current = defaultContext;
         setSdk(defaultContext);
+      }
+
+      // Check again after cleanup
+      if (currentInitId !== initializationIdRef.current || isCleanedUp) {
+        logger.debug("Skipping stale initialization after cleanup");
+        return;
       }
 
       try {
@@ -188,19 +210,21 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
           asyncStorage
         );
 
-        if (!isCleanedUp) {
-          setSdk(sdkInstance);
-          sdkRef.current = sdkInstance;
-          logger.log("Successfully initialized FormoAnalytics SDK");
-
-          // Call onReady callback using the ref (stable reference)
-          onReadyRef.current?.(sdkInstance);
-        } else {
-          logger.log("Component unmounted during initialization, cleaning up");
+        // Verify this initialization is still current
+        if (currentInitId !== initializationIdRef.current || isCleanedUp) {
+          logger.log("Initialization superseded, cleaning up new instance");
           await sdkInstance.cleanup();
+          return;
         }
+
+        setSdk(sdkInstance);
+        sdkRef.current = sdkInstance;
+        logger.log("Successfully initialized FormoAnalytics SDK");
+
+        // Call onReady callback using the ref (stable reference)
+        onReadyRef.current?.(sdkInstance);
       } catch (error) {
-        if (!isCleanedUp) {
+        if (currentInitId === initializationIdRef.current && !isCleanedUp) {
           logger.error("Failed to initialize FormoAnalytics SDK", error);
           // Call onError callback using the ref (stable reference)
           onErrorRef.current?.(error instanceof Error ? error : new Error(String(error)));
@@ -215,12 +239,11 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
 
       if (sdkRef.current && sdkRef.current !== defaultContext) {
         logger.log("Cleaning up FormoAnalytics SDK instance");
-        // Note: React cleanup functions cannot be async. We start the cleanup
-        // (which flushes pending events) but cannot await it. For re-initialization,
-        // cleanup is properly awaited in the initialize function above.
-        sdkRef.current.cleanup().catch((error) => {
+        // Store cleanup promise so next initialization can await it
+        const cleanup = sdkRef.current.cleanup().catch((error) => {
           logger.error("Error during SDK cleanup:", error);
         });
+        cleanupPromiseRef.current = cleanup;
         sdkRef.current = defaultContext;
       }
     };

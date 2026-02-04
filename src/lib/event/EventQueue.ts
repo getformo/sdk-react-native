@@ -322,7 +322,13 @@ export class EventQueue implements IEventQueue {
   public async cleanup(): Promise<void> {
     // Flush all remaining queued events before teardown
     // Loop until queue is empty since flush() only sends flushAt events per call
-    while (this.queue.length > 0) {
+    // Safety limit prevents infinite loops if flush silently fails
+    const maxAttempts = Math.ceil(this.queue.length / this.flushAt) + 3;
+    let attempts = 0;
+    const initialQueueLength = this.queue.length;
+
+    while (this.queue.length > 0 && attempts < maxAttempts) {
+      const queueLengthBefore = this.queue.length;
       try {
         await this.flush();
       } catch (error) {
@@ -330,6 +336,26 @@ export class EventQueue implements IEventQueue {
         // Break on error to avoid infinite loop if flush keeps failing
         break;
       }
+
+      // If queue length didn't decrease, flush is silently failing
+      if (this.queue.length >= queueLengthBefore) {
+        logger.warn("EventQueue: Flush did not reduce queue size, aborting cleanup");
+        break;
+      }
+
+      attempts++;
+    }
+
+    if (attempts >= maxAttempts && this.queue.length > 0) {
+      logger.warn(
+        `EventQueue: Cleanup safety limit reached. Discarding ${this.queue.length} events.`
+      );
+      this.queue = [];
+      this.payloadHashes.clear();
+    }
+
+    if (initialQueueLength > 0) {
+      logger.debug(`EventQueue: Cleanup completed, flushed ${initialQueueLength - this.queue.length} events`);
     }
 
     if (this.timer) {
