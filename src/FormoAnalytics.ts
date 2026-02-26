@@ -22,6 +22,7 @@ import {
 } from "./lib/consent";
 import { FormoAnalyticsSession } from "./lib/session";
 import { WagmiEventHandler } from "./lib/wagmi";
+import { LifecycleEventTracker } from "./lib/lifecycle";
 import {
   Address,
   ChainID,
@@ -41,6 +42,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private eventManager: IEventManager;
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
+  private lifecycleTracker?: LifecycleEventTracker;
 
   config: Config;
   currentChainId?: ChainID;
@@ -125,6 +127,15 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Start lifecycle tracking if enabled
+    if (options?.trackAppLifecycleEvents) {
+      analytics.lifecycleTracker = new LifecycleEventTracker(
+        analytics.track.bind(analytics),
+        options
+      );
+      await analytics.lifecycleTracker.start();
+    }
+
     // Call ready callback
     if (options?.ready) {
       options.ready(analytics);
@@ -196,6 +207,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async cleanup(): Promise<void> {
     logger.info("FormoAnalytics: Cleaning up resources");
+
+    if (this.lifecycleTracker) {
+      this.lifecycleTracker.cleanup();
+      this.lifecycleTracker = undefined;
+    }
 
     if (this.wagmiHandler) {
       this.wagmiHandler.cleanup();

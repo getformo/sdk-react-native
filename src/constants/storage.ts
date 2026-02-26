@@ -10,5 +10,9 @@ export const SESSION_TRAFFIC_SOURCE_KEY = "traffic_source";
 export const SESSION_WALLET_DETECTED_KEY = "wallet_detected";
 export const SESSION_WALLET_IDENTIFIED_KEY = "wallet_identified";
 
+// Lifecycle keys (persistent across sessions)
+export const LIFECYCLE_APP_VERSION_KEY = "lifecycle_app_version";
+export const LIFECYCLE_APP_BUILD_KEY = "lifecycle_app_build";
+
 // Consent keys
 export const CONSENT_OPT_OUT_KEY = "opt_out_tracking";

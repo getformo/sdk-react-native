@@ -226,6 +226,12 @@ export interface Options {
    * App information for context enrichment
    */
   app?: AppInfo;
+  /**
+   * Automatically track application lifecycle events:
+   * Application Installed, Application Updated, Application Opened, Application Backgrounded
+   * @default false
+   */
+  trackAppLifecycleEvents?: boolean;
   ready?: (formo: IFormoAnalytics) => void;
 }
 

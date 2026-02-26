@@ -151,6 +151,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
   const maxQueueSize = options?.maxQueueSize;
   const loggerOption = options?.logger;
   const app = options?.app;
+  const trackAppLifecycleEvents = options?.trackAppLifecycleEvents;
   const hasReady = !!options?.ready;
   const wagmiConfig = options?.wagmi?.config;
   const wagmiQueryClient = options?.wagmi?.queryClient;
@@ -167,6 +168,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
       maxQueueSize,
       logger: loggerOption,
       app,
+      trackAppLifecycleEvents,
       hasReady,
     };
 
@@ -176,7 +178,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
       logger.warn("Failed to serialize options, using timestamp", error);
       return Date.now().toString();
     }
-  }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, hasReady]);
+  }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, trackAppLifecycleEvents, hasReady]);
 
   useEffect(() => {
     // Increment initialization ID to track which initialization is current
