@@ -604,7 +604,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     } catch (error) {
       logger.error("Error tracking event:", error);
       if (this.options.errorHandler) {
-        this.options.errorHandler(error instanceof Error ? error : new Error(String(error)));
+        try {
+          this.options.errorHandler(error instanceof Error ? error : new Error(String(error)));
+        } catch (handlerError) {
+          logger.error("Error in errorHandler callback:", handlerError);
+        }
       }
     }
   }
