@@ -260,7 +260,7 @@ describe('FormoAnalytics', () => {
   });
 
   describe('signature()', () => {
-    it('should not track if chainId is invalid', async () => {
+    it('should track signature with chainId 0 (chainId is optional)', async () => {
       await analytics.signature({
         status: SignatureStatus.REQUESTED,
         chainId: 0,
@@ -268,7 +268,17 @@ describe('FormoAnalytics', () => {
         message: 'test message',
       });
 
-      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+
+    it('should track signature without chainId', async () => {
+      await analytics.signature({
+        status: SignatureStatus.REQUESTED,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+        message: 'test message',
+      });
+
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
 
     it('should not track if address is empty', async () => {

@@ -35,6 +35,7 @@ import {
   TransactionStatus,
 } from "./types";
 import { toChecksumAddress, getValidAddress } from "./utils";
+import { parseTrafficSource, storeTrafficSource } from "./utils/trafficSource";
 
 export class FormoAnalytics implements IFormoAnalytics {
   private session: FormoAnalyticsSession;
@@ -138,6 +139,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async screen(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
@@ -145,7 +147,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Note: shouldTrack() is called in trackEvent() - no need to check here
     await this.trackEvent(
       EventType.SCREEN,
-      { name },
+      { name, ...(category && { category }) },
       properties,
       context,
       callback
@@ -175,8 +177,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    * ```
    */
   public setTrafficSourceFromUrl(url: string): void {
-    const { parseTrafficSource, storeTrafficSource } = require("./utils/trafficSource");
-    const trafficSource = parseTrafficSource(url);
+    const trafficSource = parseTrafficSource(url, this.options.referral?.queryParams);
     storeTrafficSource(trafficSource);
     logger.debug("Traffic source set from URL:", trafficSource);
   }
@@ -325,7 +326,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       signatureHash,
     }: {
       status: SignatureStatus;
-      chainId: ChainID;
+      chainId?: ChainID;
       address: Address;
       message: string;
       signatureHash?: string;
@@ -334,10 +335,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    if (chainId === null || chainId === undefined || Number(chainId) === 0) {
-      logger.warn("Signature: Chain ID cannot be null, undefined, or 0");
-      return;
-    }
     if (!address) {
       logger.warn("Signature: Address cannot be empty");
       return;
@@ -346,7 +343,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       EventType.SIGNATURE,
       {
         status,
-        chainId,
+        ...(chainId !== undefined && chainId !== null && { chainId }),
         address,
         message,
         ...(signatureHash && { signatureHash }),
@@ -369,6 +366,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       to,
       value,
       transactionHash,
+      function_name,
+      function_args,
     }: {
       status: TransactionStatus;
       chainId: ChainID;
@@ -377,6 +376,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       to?: string;
       value?: string;
       transactionHash?: string;
+      function_name?: string;
+      function_args?: Record<string, unknown>;
     },
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
@@ -400,6 +401,8 @@ export class FormoAnalytics implements IFormoAnalytics {
         to,
         value,
         ...(transactionHash && { transactionHash }),
+        ...(function_name && { function_name }),
+        ...(function_args && { function_args }),
       },
       properties,
       context,
@@ -596,6 +599,9 @@ export class FormoAnalytics implements IFormoAnalytics {
       );
     } catch (error) {
       logger.error("Error tracking event:", error);
+      if (this.options.errorHandler) {
+        this.options.errorHandler(error instanceof Error ? error : new Error(String(error)));
+      }
     }
   }
 

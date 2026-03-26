@@ -19,6 +19,7 @@ export interface IEventFactory {
 
   generateScreenEvent(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent>;
@@ -62,7 +63,7 @@ export interface IEventFactory {
 
   generateSignatureEvent(
     status: SignatureStatus,
-    chainId: ChainID,
+    chainId: ChainID | undefined,
     address: Address,
     message: string,
     signatureHash?: string,
@@ -74,10 +75,12 @@ export interface IEventFactory {
     status: TransactionStatus,
     chainId: ChainID,
     address: Address,
-    data: string,
-    to: string,
-    value: string,
+    data?: string,
+    to?: string,
+    value?: string,
     transactionHash?: string,
+    function_name?: string,
+    function_args?: Record<string, unknown>,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent>;

@@ -12,7 +12,7 @@ import type { ITrafficSource } from "../types";
  * Parse UTM parameters and referral info from URL
  * Supports both web URLs (https://) and deep link URLs (myapp://)
  */
-export function parseTrafficSource(url: string): Partial<ITrafficSource> {
+export function parseTrafficSource(url: string, customRefParams?: string[]): Partial<ITrafficSource> {
   try {
     // Handle deep link URLs that may not have standard URL format
     let urlObj: URL;
@@ -40,8 +40,11 @@ export function parseTrafficSource(url: string): Partial<ITrafficSource> {
     if (params.has("utm_term")) trafficSource.utm_term = params.get("utm_term")!;
     if (params.has("utm_content")) trafficSource.utm_content = params.get("utm_content")!;
 
-    // Extract referral codes (check common parameter names)
-    const refParams = ["ref", "referral", "refcode", "referrer_code"];
+    // Extract referral codes (check common parameter names + custom ones)
+    const defaultRefParams = ["ref", "referral", "refcode", "referrer_code"];
+    const refParams = customRefParams
+      ? [...defaultRefParams, ...customRefParams]
+      : defaultRefParams;
     for (const param of refParams) {
       if (params.has(param)) {
         trafficSource.ref = params.get(param)!;

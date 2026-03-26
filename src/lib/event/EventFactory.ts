@@ -367,10 +367,11 @@ class EventFactory implements IEventFactory {
    */
   async generateScreenEvent(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent> {
-    const props = { ...(properties ?? {}), name };
+    const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
     const screenEvent: Partial<IFormoEvent> = {
       properties: props,
@@ -476,7 +477,7 @@ class EventFactory implements IEventFactory {
 
   async generateSignatureEvent(
     status: SignatureStatus,
-    chainId: ChainID,
+    chainId: ChainID | undefined,
     address: Address,
     message: string,
     signatureHash?: string,
@@ -486,7 +487,7 @@ class EventFactory implements IEventFactory {
     const signatureEvent: Partial<IFormoEvent> = {
       properties: {
         status,
-        chainId,
+        ...(chainId !== undefined && chainId !== null && { chainId }),
         message,
         ...(signatureHash && { signatureHash }),
         ...properties,
@@ -502,10 +503,12 @@ class EventFactory implements IEventFactory {
     status: TransactionStatus,
     chainId: ChainID,
     address: Address,
-    data: string,
-    to: string,
-    value: string,
+    data?: string,
+    to?: string,
+    value?: string,
     transactionHash?: string,
+    function_name?: string,
+    function_args?: Record<string, unknown>,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent> {
@@ -517,6 +520,8 @@ class EventFactory implements IEventFactory {
         to,
         value,
         ...(transactionHash && { transactionHash }),
+        ...(function_name && { function_name }),
+        ...(function_args && { function_args }),
         ...properties,
       },
       address,
@@ -569,6 +574,7 @@ class EventFactory implements IEventFactory {
       case "screen":
         formoEvent = await this.generateScreenEvent(
           event.name,
+          event.category,
           event.properties,
           event.context
         );
@@ -635,6 +641,8 @@ class EventFactory implements IEventFactory {
           event.to,
           event.value,
           event.transactionHash,
+          event.function_name,
+          event.function_args,
           event.properties,
           event.context
         );
