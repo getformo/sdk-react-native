@@ -349,7 +349,7 @@ describe('FormoAnalytics', () => {
 
   describe('screen()', () => {
     it('should track screen views', async () => {
-      await analytics.screen('HomeScreen', undefined, { section: 'featured' });
+      await analytics.screen('HomeScreen', { section: 'featured' });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
     });

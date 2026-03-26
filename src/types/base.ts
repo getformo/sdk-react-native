@@ -19,7 +19,6 @@ export type ValidInputTypes = Uint8Array | bigint | string | number | boolean;
 export interface IFormoAnalytics {
   screen(
     name: string,
-    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void

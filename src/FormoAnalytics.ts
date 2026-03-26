@@ -139,15 +139,15 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async screen(
     name: string,
-    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
     // Note: shouldTrack() is called in trackEvent() - no need to check here
+    // Category can be passed via properties.category (matching web SDK's page(category?, name?))
     await this.trackEvent(
       EventType.SCREEN,
-      { name, ...(category && { category }) },
+      { name, ...(properties?.category ? { category: properties.category } : {}) },
       properties,
       context,
       callback
@@ -177,7 +177,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    * ```
    */
   public setTrafficSourceFromUrl(url: string): void {
-    const trafficSource = parseTrafficSource(url, this.options.referral?.queryParams);
+    const trafficSource = parseTrafficSource(
+      url,
+      this.options.referral?.queryParams,
+      this.options.referral?.pathPattern
+    );
     storeTrafficSource(trafficSource);
     logger.debug("Traffic source set from URL:", trafficSource);
   }

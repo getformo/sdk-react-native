@@ -19,7 +19,6 @@ export interface IEventFactory {
 
   generateScreenEvent(
     name: string,
-    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent>;
