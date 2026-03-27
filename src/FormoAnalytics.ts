@@ -22,6 +22,7 @@ import {
 } from "./lib/consent";
 import { FormoAnalyticsSession } from "./lib/session";
 import { WagmiEventHandler } from "./lib/wagmi";
+import { AppLifecycleManager } from "./lib/lifecycle";
 import {
   Address,
   ChainID,
@@ -42,6 +43,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private eventManager: IEventManager;
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
+  private lifecycleManager?: AppLifecycleManager;
 
   config: Config;
   currentChainId?: ChainID;
@@ -126,6 +128,12 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Initialize lifecycle tracking if enabled
+    if (analytics.isAutocaptureEnabled("lifecycle")) {
+      analytics.lifecycleManager = new AppLifecycleManager(analytics);
+      await analytics.lifecycleManager.start(options?.app);
+    }
+
     // Call ready callback
     if (options?.ready) {
       options.ready(analytics);
@@ -201,6 +209,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async cleanup(): Promise<void> {
     logger.info("FormoAnalytics: Cleaning up resources");
+
+    if (this.lifecycleManager) {
+      this.lifecycleManager.cleanup();
+      this.lifecycleManager = undefined;
+    }
 
     if (this.wagmiHandler) {
       this.wagmiHandler.cleanup();
@@ -551,7 +564,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    * Check if autocapture is enabled for event type
    */
   public isAutocaptureEnabled(
-    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain"
+    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain" | "lifecycle"
   ): boolean {
     if (this.options.autocapture === undefined) {
       return true;

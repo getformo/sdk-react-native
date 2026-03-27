@@ -3,6 +3,8 @@ export const STORAGE_PREFIX = "formo_rn_";
 
 // Local storage keys (persistent)
 export const LOCAL_ANONYMOUS_ID_KEY = "anonymous_id";
+export const LOCAL_APP_VERSION_KEY = "app_version";
+export const LOCAL_APP_BUILD_KEY = "app_build";
 
 // Session storage keys (cleared on app restart)
 export const SESSION_USER_ID_KEY = "user_id";

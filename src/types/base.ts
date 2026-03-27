@@ -150,6 +150,12 @@ export interface AutocaptureOptions {
    * @default true
    */
   chain?: boolean;
+
+  /**
+   * Track application lifecycle events (installed, updated, opened, backgrounded)
+   * @default true
+   */
+  lifecycle?: boolean;
 }
 
 /**

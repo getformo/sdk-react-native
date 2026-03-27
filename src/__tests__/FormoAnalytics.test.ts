@@ -58,6 +58,16 @@ jest.mock('../lib/consent', () => ({
   removeConsentFlag: jest.fn(),
 }));
 
+const mockLifecycleManager = {
+  start: jest.fn(),
+  cleanup: jest.fn(),
+};
+
+jest.mock('../lib/lifecycle', () => ({
+  __esModule: true,
+  AppLifecycleManager: jest.fn(),
+}));
+
 jest.mock('../lib/logger', () => ({
   __esModule: true,
   logger: {
@@ -78,6 +88,7 @@ import { initStorageManager, storage } from '../lib/storage';
 import { EventManager, EventQueue } from '../lib/event';
 import { FormoAnalyticsSession } from '../lib/session';
 import { setConsentFlag, getConsentFlag, removeConsentFlag } from '../lib/consent';
+import { AppLifecycleManager } from '../lib/lifecycle';
 
 // Helper to setup all mock implementations
 const setupMocks = () => {
@@ -114,6 +125,11 @@ const setupMocks = () => {
 
   // Consent mocks
   (getConsentFlag as jest.Mock).mockReturnValue(null);
+
+  // Lifecycle mocks
+  mockLifecycleManager.start.mockResolvedValue(undefined);
+  mockLifecycleManager.cleanup.mockReturnValue(undefined);
+  (AppLifecycleManager as jest.Mock).mockImplementation(() => mockLifecycleManager);
 };
 
 describe('FormoAnalytics', () => {
