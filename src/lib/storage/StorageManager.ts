@@ -82,7 +82,7 @@ export class StorageManager {
    */
   public hasPersistentStorage(): boolean {
     const stored = this.storages.get("asyncStorage");
-    return stored !== undefined && stored.isAvailable();
+    return stored instanceof AsyncStorageAdapter && stored.isAvailable();
   }
 }
 
