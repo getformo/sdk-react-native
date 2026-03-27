@@ -19,12 +19,8 @@ const mockStorageInstance = {
   isAvailable: jest.fn().mockReturnValue(true),
 };
 
-const mockAsyncStorageInstance = {
-  isAvailable: jest.fn().mockReturnValue(true),
-};
-
 const mockStorageManager = {
-  getStorage: jest.fn().mockReturnValue(mockAsyncStorageInstance),
+  hasPersistentStorage: jest.fn().mockReturnValue(true),
 };
 
 jest.mock('../lib/storage', () => ({
@@ -56,8 +52,7 @@ describe('AppLifecycleManager', () => {
     mockAnalytics = { track: jest.fn().mockResolvedValue(undefined) };
     mockStorageInstance.get.mockReturnValue(null);
     mockStorageInstance.set.mockReturnValue(undefined);
-    mockAsyncStorageInstance.isAvailable.mockReturnValue(true);
-    mockStorageManager.getStorage.mockReturnValue(mockAsyncStorageInstance);
+    mockStorageManager.hasPersistentStorage.mockReturnValue(true);
     (storage as jest.Mock).mockReturnValue(mockStorageInstance);
     (getStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
     (AppState.addEventListener as jest.Mock).mockReturnValue({ remove: jest.fn() });
@@ -229,7 +224,7 @@ describe('AppLifecycleManager', () => {
 
   describe('no persistent storage', () => {
     it('should skip install/update detection when AsyncStorage is not available', async () => {
-      mockAsyncStorageInstance.isAvailable.mockReturnValue(false);
+      mockStorageManager.hasPersistentStorage.mockReturnValue(false);
 
       await manager.start({ version: '1.0.0', build: '1' });
 
@@ -244,7 +239,7 @@ describe('AppLifecycleManager', () => {
     });
 
     it('should still fire Application Opened without persistent storage', async () => {
-      mockAsyncStorageInstance.isAvailable.mockReturnValue(false);
+      mockStorageManager.hasPersistentStorage.mockReturnValue(false);
 
       await manager.start({ version: '1.0.0', build: '1' });
 

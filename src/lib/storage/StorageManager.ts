@@ -75,6 +75,15 @@ export class StorageManager {
     }
     return this.getStorage("memoryStorage");
   }
+
+  /**
+   * Check if persistent storage (AsyncStorage) has been initialized.
+   * Returns false if only MemoryStorage is available.
+   */
+  public hasPersistentStorage(): boolean {
+    const stored = this.storages.get("asyncStorage");
+    return stored !== undefined && stored.isAvailable();
+  }
 }
 
 // Global storage manager instance

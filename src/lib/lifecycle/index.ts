@@ -125,9 +125,7 @@ export class AppLifecycleManager {
    */
   private async detectInstallOrUpdate(): Promise<void> {
     const manager = getStorageManager();
-    const hasPersistentStorage = manager
-      ? manager.getStorage("asyncStorage").isAvailable()
-      : false;
+    const hasPersistentStorage = manager?.hasPersistentStorage() ?? false;
 
     if (!hasPersistentStorage) {
       logger.warn(
