@@ -359,7 +359,18 @@ class EventFactory implements IEventFactory {
       processedEvent.properties = null;
     }
 
-    return toSnakeCase(processedEvent as unknown as Record<string, unknown>) as unknown as IFormoEvent;
+    // Extract function_args before snake_case conversion to preserve ABI parameter names
+    // (e.g., "tokenId" should not become "token_id" since it's a contract ABI name)
+    const functionArgs = (processedEvent.properties as Record<string, unknown>)?.function_args;
+
+    const converted = toSnakeCase(processedEvent as unknown as Record<string, unknown>) as unknown as IFormoEvent;
+
+    // Re-attach function_args with original key casing
+    if (functionArgs && converted.properties) {
+      (converted.properties as Record<string, unknown>).function_args = functionArgs;
+    }
+
+    return converted;
   }
 
   /**
