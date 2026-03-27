@@ -12,7 +12,7 @@
 
 import { AppState, AppStateStatus, Linking } from "react-native";
 import { logger } from "../logger";
-import { storage } from "../storage";
+import { storage, getStorageManager } from "../storage";
 import {
   LOCAL_APP_VERSION_KEY,
   LOCAL_APP_BUILD_KEY,
@@ -120,8 +120,23 @@ export class AppLifecycleManager {
 
   /**
    * Compare stored version/build with current to detect install or update.
+   * Requires persistent storage (AsyncStorage) — skips if only MemoryStorage is available,
+   * since MemoryStorage is empty on every cold start and would false-positive as "installed".
    */
   private async detectInstallOrUpdate(): Promise<void> {
+    const manager = getStorageManager();
+    const hasPersistentStorage = manager
+      ? manager.getStorage("asyncStorage").isAvailable()
+      : false;
+
+    if (!hasPersistentStorage) {
+      logger.warn(
+        "AppLifecycleManager: AsyncStorage not available, skipping install/update detection. " +
+          "Provide asyncStorage to FormoAnalyticsProvider for accurate lifecycle tracking."
+      );
+      return;
+    }
+
     const previousVersion = storage().get(LOCAL_APP_VERSION_KEY) as string | null;
     const previousBuild = storage().get(LOCAL_APP_BUILD_KEY) as string | null;
 

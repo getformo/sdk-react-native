@@ -16,11 +16,21 @@ const mockStorageInstance = {
   get: jest.fn().mockReturnValue(null),
   set: jest.fn(),
   remove: jest.fn(),
+  isAvailable: jest.fn().mockReturnValue(true),
+};
+
+const mockAsyncStorageInstance = {
+  isAvailable: jest.fn().mockReturnValue(true),
+};
+
+const mockStorageManager = {
+  getStorage: jest.fn().mockReturnValue(mockAsyncStorageInstance),
 };
 
 jest.mock('../lib/storage', () => ({
   __esModule: true,
   storage: jest.fn(() => mockStorageInstance),
+  getStorageManager: jest.fn(() => mockStorageManager),
 }));
 
 jest.mock('../lib/logger', () => ({
@@ -35,7 +45,7 @@ jest.mock('../lib/logger', () => ({
 }));
 
 import { AppLifecycleManager } from '../lib/lifecycle';
-import { storage } from '../lib/storage';
+import { storage, getStorageManager } from '../lib/storage';
 import { Linking } from 'react-native';
 
 describe('AppLifecycleManager', () => {
@@ -46,7 +56,10 @@ describe('AppLifecycleManager', () => {
     mockAnalytics = { track: jest.fn().mockResolvedValue(undefined) };
     mockStorageInstance.get.mockReturnValue(null);
     mockStorageInstance.set.mockReturnValue(undefined);
+    mockAsyncStorageInstance.isAvailable.mockReturnValue(true);
+    mockStorageManager.getStorage.mockReturnValue(mockAsyncStorageInstance);
     (storage as jest.Mock).mockReturnValue(mockStorageInstance);
+    (getStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
     (AppState.addEventListener as jest.Mock).mockReturnValue({ remove: jest.fn() });
     (Linking.getInitialURL as jest.Mock).mockResolvedValue(null);
     manager = new AppLifecycleManager(mockAnalytics);
@@ -211,6 +224,35 @@ describe('AppLifecycleManager', () => {
       callback('inactive');
 
       expect(mockAnalytics.track).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('no persistent storage', () => {
+    it('should skip install/update detection when AsyncStorage is not available', async () => {
+      mockAsyncStorageInstance.isAvailable.mockReturnValue(false);
+
+      await manager.start({ version: '1.0.0', build: '1' });
+
+      expect(mockAnalytics.track).not.toHaveBeenCalledWith(
+        'Application Installed',
+        expect.anything()
+      );
+      expect(mockAnalytics.track).not.toHaveBeenCalledWith(
+        'Application Updated',
+        expect.anything()
+      );
+    });
+
+    it('should still fire Application Opened without persistent storage', async () => {
+      mockAsyncStorageInstance.isAvailable.mockReturnValue(false);
+
+      await manager.start({ version: '1.0.0', build: '1' });
+
+      expect(mockAnalytics.track).toHaveBeenCalledWith('Application Opened', {
+        version: '1.0.0',
+        build: '1',
+        from_background: false,
+      });
     });
   });
 
