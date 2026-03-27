@@ -58,6 +58,16 @@ jest.mock('../lib/consent', () => ({
   removeConsentFlag: jest.fn(),
 }));
 
+const mockLifecycleManager = {
+  start: jest.fn(),
+  cleanup: jest.fn(),
+};
+
+jest.mock('../lib/lifecycle', () => ({
+  __esModule: true,
+  AppLifecycleManager: jest.fn(),
+}));
+
 jest.mock('../lib/logger', () => ({
   __esModule: true,
   logger: {
@@ -78,6 +88,7 @@ import { initStorageManager, storage } from '../lib/storage';
 import { EventManager, EventQueue } from '../lib/event';
 import { FormoAnalyticsSession } from '../lib/session';
 import { setConsentFlag, getConsentFlag, removeConsentFlag } from '../lib/consent';
+import { AppLifecycleManager } from '../lib/lifecycle';
 
 // Helper to setup all mock implementations
 const setupMocks = () => {
@@ -114,6 +125,11 @@ const setupMocks = () => {
 
   // Consent mocks
   (getConsentFlag as jest.Mock).mockReturnValue(null);
+
+  // Lifecycle mocks
+  mockLifecycleManager.start.mockResolvedValue(undefined);
+  mockLifecycleManager.cleanup.mockReturnValue(undefined);
+  (AppLifecycleManager as jest.Mock).mockImplementation(() => mockLifecycleManager);
 };
 
 describe('FormoAnalytics', () => {
@@ -260,7 +276,7 @@ describe('FormoAnalytics', () => {
   });
 
   describe('signature()', () => {
-    it('should not track if chainId is invalid', async () => {
+    it('should track signature with chainId 0 (chainId is optional)', async () => {
       await analytics.signature({
         status: SignatureStatus.REQUESTED,
         chainId: 0,
@@ -268,7 +284,17 @@ describe('FormoAnalytics', () => {
         message: 'test message',
       });
 
-      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+
+    it('should track signature without chainId', async () => {
+      await analytics.signature({
+        status: SignatureStatus.REQUESTED,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+        message: 'test message',
+      });
+
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
 
     it('should not track if address is empty', async () => {
@@ -339,7 +365,7 @@ describe('FormoAnalytics', () => {
 
   describe('screen()', () => {
     it('should track screen views', async () => {
-      await analytics.screen('HomeScreen', { section: 'featured' });
+      await analytics.screen('HomeScreen', undefined, { section: 'featured' });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
     });

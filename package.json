@@ -2,7 +2,7 @@
   "name": "@formo/react-native-analytics",
   "version": "1.0.0",
   "description": "Formo Analytics SDK for React Native - Track wallet events and user analytics in mobile dApps",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.27.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getformo/sdk.git",

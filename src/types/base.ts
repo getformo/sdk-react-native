@@ -19,6 +19,7 @@ export type ValidInputTypes = Uint8Array | bigint | string | number | boolean;
 export interface IFormoAnalytics {
   screen(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
@@ -52,7 +53,7 @@ export interface IFormoAnalytics {
   signature(
     params: {
       status: SignatureStatus;
-      chainId: ChainID;
+      chainId?: ChainID;
       address: Address;
       message: string;
       signatureHash?: string;
@@ -70,6 +71,8 @@ export interface IFormoAnalytics {
       to?: string;
       value?: string;
       transactionHash?: string;
+      function_name?: string;
+      function_args?: Record<string, unknown>;
     },
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
@@ -147,6 +150,12 @@ export interface AutocaptureOptions {
    * @default true
    */
   chain?: boolean;
+
+  /**
+   * Track application lifecycle events (installed, updated, opened, backgrounded)
+   * @default true
+   */
+  lifecycle?: boolean;
 }
 
 /**
@@ -193,6 +202,21 @@ export interface AppInfo {
   bundleId?: string;
 }
 
+/**
+ * Configuration options for custom referral query parameter parsing
+ */
+export interface ReferralOptions {
+  /**
+   * Custom query parameter names to check for referral codes
+   * These are checked in addition to the defaults: ref, referral, refcode, referrer_code
+   */
+  queryParams?: string[];
+  /**
+   * Path pattern for extracting referral codes from URL paths
+   */
+  pathPattern?: string;
+}
+
 export interface Options {
   tracking?: boolean | TrackingOptions;
   /**
@@ -226,6 +250,14 @@ export interface Options {
    * App information for context enrichment
    */
   app?: AppInfo;
+  /**
+   * Custom referral query parameter configuration
+   */
+  referral?: ReferralOptions;
+  /**
+   * Global error handler for SDK errors
+   */
+  errorHandler?: (err: Error) => void;
   ready?: (formo: IFormoAnalytics) => void;
 }
 
@@ -233,5 +265,20 @@ export interface FormoAnalyticsProviderProps {
   writeKey: string;
   options?: Options;
   disabled?: boolean;
+  /**
+   * AsyncStorage instance from @react-native-async-storage/async-storage
+   * Required for persistent storage
+   */
+  asyncStorage?: import("../lib/storage").AsyncStorageInterface;
+  /**
+   * Callback when SDK is ready
+   * Note: Use useCallback to avoid re-initialization on every render
+   */
+  onReady?: (sdk: IFormoAnalytics) => void;
+  /**
+   * Callback when SDK initialization fails
+   * Note: Use useCallback to avoid re-initialization on every render
+   */
+  onError?: (error: Error) => void;
   children: ReactNode;
 }

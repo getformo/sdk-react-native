@@ -22,6 +22,7 @@ import {
 } from "./lib/consent";
 import { FormoAnalyticsSession } from "./lib/session";
 import { WagmiEventHandler } from "./lib/wagmi";
+import { AppLifecycleManager } from "./lib/lifecycle";
 import {
   Address,
   ChainID,
@@ -35,12 +36,14 @@ import {
   TransactionStatus,
 } from "./types";
 import { toChecksumAddress, getValidAddress } from "./utils";
+import { parseTrafficSource, storeTrafficSource } from "./utils/trafficSource";
 
 export class FormoAnalytics implements IFormoAnalytics {
   private session: FormoAnalyticsSession;
   private eventManager: IEventManager;
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
+  private lifecycleManager?: AppLifecycleManager;
 
   config: Config;
   currentChainId?: ChainID;
@@ -125,6 +128,17 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Initialize lifecycle tracking if enabled
+    // Wrapped in try-catch so a transient storage failure doesn't prevent SDK init
+    if (analytics.isAutocaptureEnabled("lifecycle")) {
+      try {
+        analytics.lifecycleManager = new AppLifecycleManager(analytics);
+        await analytics.lifecycleManager.start(options?.app);
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize lifecycle tracking", error);
+      }
+    }
+
     // Call ready callback
     if (options?.ready) {
       options.ready(analytics);
@@ -138,6 +152,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async screen(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
@@ -145,7 +160,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Note: shouldTrack() is called in trackEvent() - no need to check here
     await this.trackEvent(
       EventType.SCREEN,
-      { name },
+      { name, ...(category && { category }) },
       properties,
       context,
       callback
@@ -175,8 +190,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    * ```
    */
   public setTrafficSourceFromUrl(url: string): void {
-    const { parseTrafficSource, storeTrafficSource } = require("./utils/trafficSource");
-    const trafficSource = parseTrafficSource(url);
+    const trafficSource = parseTrafficSource(
+      url,
+      this.options.referral?.queryParams,
+      this.options.referral?.pathPattern
+    );
     storeTrafficSource(trafficSource);
     logger.debug("Traffic source set from URL:", trafficSource);
   }
@@ -196,6 +214,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async cleanup(): Promise<void> {
     logger.info("FormoAnalytics: Cleaning up resources");
+
+    if (this.lifecycleManager) {
+      this.lifecycleManager.cleanup();
+      this.lifecycleManager = undefined;
+    }
 
     if (this.wagmiHandler) {
       this.wagmiHandler.cleanup();
@@ -325,7 +348,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       signatureHash,
     }: {
       status: SignatureStatus;
-      chainId: ChainID;
+      chainId?: ChainID;
       address: Address;
       message: string;
       signatureHash?: string;
@@ -334,10 +357,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    if (chainId === null || chainId === undefined || Number(chainId) === 0) {
-      logger.warn("Signature: Chain ID cannot be null, undefined, or 0");
-      return;
-    }
     if (!address) {
       logger.warn("Signature: Address cannot be empty");
       return;
@@ -346,7 +365,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       EventType.SIGNATURE,
       {
         status,
-        chainId,
+        ...(chainId !== undefined && chainId !== null && { chainId }),
         address,
         message,
         ...(signatureHash && { signatureHash }),
@@ -369,6 +388,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       to,
       value,
       transactionHash,
+      function_name,
+      function_args,
     }: {
       status: TransactionStatus;
       chainId: ChainID;
@@ -377,6 +398,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       to?: string;
       value?: string;
       transactionHash?: string;
+      function_name?: string;
+      function_args?: Record<string, unknown>;
     },
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
@@ -400,6 +423,8 @@ export class FormoAnalytics implements IFormoAnalytics {
         to,
         value,
         ...(transactionHash && { transactionHash }),
+        ...(function_name && { function_name }),
+        ...(function_args && { function_args }),
       },
       properties,
       context,
@@ -544,7 +569,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    * Check if autocapture is enabled for event type
    */
   public isAutocaptureEnabled(
-    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain"
+    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain" | "lifecycle"
   ): boolean {
     if (this.options.autocapture === undefined) {
       return true;
@@ -596,6 +621,13 @@ export class FormoAnalytics implements IFormoAnalytics {
       );
     } catch (error) {
       logger.error("Error tracking event:", error);
+      if (this.options.errorHandler) {
+        try {
+          this.options.errorHandler(error instanceof Error ? error : new Error(String(error)));
+        } catch (handlerError) {
+          logger.error("Error in errorHandler callback:", handlerError);
+        }
+      }
     }
   }
 

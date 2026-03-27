@@ -8,7 +8,7 @@ import React, {
   FC,
 } from "react";
 import { FormoAnalytics } from "./FormoAnalytics";
-import { initStorageManager, AsyncStorageInterface } from "./lib/storage";
+import { initStorageManager } from "./lib/storage";
 import { logger } from "./lib/logger";
 import { FormoAnalyticsProviderProps, IFormoAnalytics } from "./types";
 
@@ -34,25 +34,6 @@ const defaultContext: IFormoAnalytics = {
 export const FormoAnalyticsContext =
   createContext<IFormoAnalytics>(defaultContext);
 
-export interface FormoAnalyticsProviderPropsWithStorage
-  extends FormoAnalyticsProviderProps {
-  /**
-   * AsyncStorage instance from @react-native-async-storage/async-storage
-   * Required for persistent storage
-   */
-  asyncStorage?: AsyncStorageInterface;
-  /**
-   * Callback when SDK is ready
-   * Note: Use useCallback to avoid re-initialization on every render
-   */
-  onReady?: (sdk: IFormoAnalytics) => void;
-  /**
-   * Callback when SDK initialization fails
-   * Note: Use useCallback to avoid re-initialization on every render
-   */
-  onError?: (error: Error) => void;
-}
-
 /**
  * Formo Analytics Provider for React Native
  *
@@ -76,7 +57,7 @@ export interface FormoAnalyticsProviderPropsWithStorage
  * }
  * ```
  */
-export const FormoAnalyticsProvider: FC<FormoAnalyticsProviderPropsWithStorage> = (
+export const FormoAnalyticsProvider: FC<FormoAnalyticsProviderProps> = (
   props
 ) => {
   const { writeKey, disabled = false, children } = props;
@@ -102,7 +83,7 @@ export const FormoAnalyticsProvider: FC<FormoAnalyticsProviderPropsWithStorage> 
   return <InitializedAnalytics {...props} />;
 };
 
-const InitializedAnalytics: FC<FormoAnalyticsProviderPropsWithStorage> = ({
+const InitializedAnalytics: FC<FormoAnalyticsProviderProps> = ({
   writeKey,
   options,
   asyncStorage,
