@@ -159,8 +159,10 @@ export class AppLifecycleManager {
     }
 
     // Persist current version/build for next comparison
-    storage().set(LOCAL_APP_VERSION_KEY, version);
-    storage().set(LOCAL_APP_BUILD_KEY, build);
+    // Use setAsync to ensure data is written to AsyncStorage before continuing,
+    // preventing duplicate install events if the app is terminated before persistence completes
+    await storage().setAsync(LOCAL_APP_VERSION_KEY, version);
+    await storage().setAsync(LOCAL_APP_BUILD_KEY, build);
   }
 
   /**

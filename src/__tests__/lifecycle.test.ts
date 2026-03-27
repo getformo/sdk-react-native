@@ -15,6 +15,7 @@ jest.mock('react-native', () => ({
 const mockStorageInstance = {
   get: jest.fn().mockReturnValue(null),
   set: jest.fn(),
+  setAsync: jest.fn().mockResolvedValue(undefined),
   remove: jest.fn(),
   isAvailable: jest.fn().mockReturnValue(true),
 };
@@ -52,6 +53,7 @@ describe('AppLifecycleManager', () => {
     mockAnalytics = { track: jest.fn().mockResolvedValue(undefined) };
     mockStorageInstance.get.mockReturnValue(null);
     mockStorageInstance.set.mockReturnValue(undefined);
+    mockStorageInstance.setAsync.mockResolvedValue(undefined);
     mockStorageManager.hasPersistentStorage.mockReturnValue(true);
     (storage as jest.Mock).mockReturnValue(mockStorageInstance);
     (getStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
@@ -89,8 +91,8 @@ describe('AppLifecycleManager', () => {
 
       await manager.start({ version: '1.0.0', build: '1' });
 
-      expect(mockStorageInstance.set).toHaveBeenCalledWith('app_version', '1.0.0');
-      expect(mockStorageInstance.set).toHaveBeenCalledWith('app_build', '1');
+      expect(mockStorageInstance.setAsync).toHaveBeenCalledWith('app_version', '1.0.0');
+      expect(mockStorageInstance.setAsync).toHaveBeenCalledWith('app_build', '1');
     });
   });
 
