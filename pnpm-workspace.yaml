@@ -1,0 +1,21 @@
+# Supply chain security settings
+# See: https://pnpm.io/supply-chain-security
+
+# 1. Block lifecycle scripts by default
+# Only explicitly approved packages can run postinstall scripts.
+# Use `pnpm approve-builds` to manage this list.
+onlyBuiltDependencies: []
+
+# 2. Block exotic subdependencies
+# Prevents transitive deps from using git repos or direct tarball URLs.
+blockExoticSubdeps: true
+
+# 3. Minimum release age (in minutes)
+# Wait 24 hours before installing newly published versions.
+# Malware is usually detected quickly, so this avoids the exposure window.
+minimumReleaseAge: 1440
+
+# 4. Trust policy
+# Prevent installation if a package's trust level has decreased
+# (e.g., was published by trusted publisher, now only has provenance).
+trustPolicy: no-downgrade
