@@ -367,10 +367,11 @@ class EventFactory implements IEventFactory {
    */
   async generateScreenEvent(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent> {
-    const props = { ...(properties ?? {}), name };
+    const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
     const screenEvent: Partial<IFormoEvent> = {
       properties: props,
@@ -573,6 +574,7 @@ class EventFactory implements IEventFactory {
       case "screen":
         formoEvent = await this.generateScreenEvent(
           event.name,
+          event.category,
           event.properties,
           event.context
         );

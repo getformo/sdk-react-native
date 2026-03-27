@@ -139,15 +139,15 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async screen(
     name: string,
+    category?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
     // Note: shouldTrack() is called in trackEvent() - no need to check here
-    // Category can be passed via properties.category (matching web SDK's page(category?, name?))
     await this.trackEvent(
       EventType.SCREEN,
-      { name, ...(properties?.category ? { category: properties.category } : {}) },
+      { name, ...(category && { category }) },
       properties,
       context,
       callback
