@@ -129,9 +129,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     const analytics = new FormoAnalytics(writeKey, options);
 
     // Initialize lifecycle tracking if enabled
+    // Wrapped in try-catch so a transient storage failure doesn't prevent SDK init
     if (analytics.isAutocaptureEnabled("lifecycle")) {
-      analytics.lifecycleManager = new AppLifecycleManager(analytics);
-      await analytics.lifecycleManager.start(options?.app);
+      try {
+        analytics.lifecycleManager = new AppLifecycleManager(analytics);
+        await analytics.lifecycleManager.start(options?.app);
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize lifecycle tracking", error);
+      }
     }
 
     // Call ready callback
