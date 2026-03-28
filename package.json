@@ -106,6 +106,17 @@
     "react-native-device-info": "^14.0.0",
     "typescript": "^5.7.3"
   },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser": ">=4.5.5",
+      "node-forge": ">=1.4.0",
+      "undici": ">=6.24.1",
+      "tar": ">=7.5.13",
+      "minimatch": ">=10.2.4",
+      "picomatch": ">=4.0.4",
+      "brace-expansion": ">=2.0.2"
+    }
+  },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
