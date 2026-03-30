@@ -9,6 +9,9 @@ node_modules
 *.swp
 *.swo
 
+# Expo
+.expo/
+
 # OS
 .DS_Store
 Thumbs.db
