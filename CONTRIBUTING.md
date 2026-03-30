@@ -91,11 +91,11 @@ pnpm typecheck
    ```
    This shows what the release notes will look like based on commits since the last tag.
 
-2. **Update the version** using npm:
+2. **Update the version** using pnpm:
    ```bash
-   npm version patch  # For bug fixes
-   npm version minor  # For new features
-   npm version major  # For breaking changes
+   pnpm version patch  # For bug fixes
+   pnpm version minor  # For new features
+   pnpm version major  # For breaking changes
    ```
 
    This automatically:

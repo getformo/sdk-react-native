@@ -46,6 +46,14 @@ if [ -z "$COMMITS" ]; then
     COMMITS=$(git log --pretty=format:"%s	%h" --no-merges -5)
 fi
 
+# Determine repository path from git remote
+REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null || echo "")
+if [[ -z "$REMOTE_URL" ]]; then
+    REPO_PATH="getformo/sdk-react-native"
+else
+    REPO_PATH=$(echo "$REMOTE_URL" | sed -E 's#.*github.com[:/]([^/]+/[^/]+)(\.git)?$#\1#')
+fi
+
 # Process commits and categorize
 FEATURES=""
 FIXES=""
@@ -60,9 +68,9 @@ while IFS=$'\t' read -r message hash; do
         PR_NUM="${BASH_REMATCH[1]}"
         # Remove the (#PR_NUM) from message to avoid duplication (handles with or without space)
         CLEAN_MESSAGE=$(echo "$message" | sed -E 's/ ?\(#[0-9]+\)//')
-        ITEM="$CLEAN_MESSAGE ([#$PR_NUM](https://github.com/getformo/sdk-react-native/pull/$PR_NUM)) ([$hash](https://github.com/getformo/sdk-react-native/commit/$hash))"
+        ITEM="$CLEAN_MESSAGE ([#$PR_NUM](https://github.com/$REPO_PATH/pull/$PR_NUM)) ([$hash](https://github.com/$REPO_PATH/commit/$hash))"
     else
-        ITEM="$message ([$hash](https://github.com/getformo/sdk-react-native/commit/$hash))"
+        ITEM="$message ([$hash](https://github.com/$REPO_PATH/commit/$hash))"
     fi
 
     # Categorize by prefix and strip conventional commit prefix
