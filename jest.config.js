@@ -6,7 +6,7 @@ module.exports = {
     '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
   },
   moduleNameMapper: {
-    '^@formo/react-native-analytics$': '<rootDir>/src/index',
+    '^@formo/analytics-react-native$': '<rootDir>/src/index',
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'node',

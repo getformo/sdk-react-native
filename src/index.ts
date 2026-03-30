@@ -6,7 +6,7 @@
  * @example
  * ```tsx
  * import AsyncStorage from '@react-native-async-storage/async-storage';
- * import { FormoAnalyticsProvider, useFormo } from '@formo/react-native-analytics';
+ * import { FormoAnalyticsProvider, useFormo } from '@formo/analytics-react-native';
  *
  * // Wrap your app with the provider
  * function App() {

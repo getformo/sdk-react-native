@@ -135,10 +135,10 @@ cat <<EOF
 ## Install
 
 \`\`\`bash
-npm install @formo/react-native-analytics@$VERSION
+npm install @formo/analytics-react-native@$VERSION
 \`\`\`
 
-[@formo/react-native-analytics $VERSION npm package](https://www.npmjs.com/package/@formo/react-native-analytics/v/$VERSION)
+[@formo/analytics-react-native $VERSION npm package](https://www.npmjs.com/package/@formo/analytics-react-native/v/$VERSION)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

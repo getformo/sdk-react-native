@@ -2,7 +2,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@formo/react-native-analytics": [
+      "@formo/analytics-react-native": [
         "./src/index"
       ]
     },
@@ -32,6 +32,5 @@
   },
   "include": [
     "src"
-  ],
-  "extends": "expo/tsconfig.base"
+  ]
 }

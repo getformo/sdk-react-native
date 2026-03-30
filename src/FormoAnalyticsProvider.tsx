@@ -42,7 +42,7 @@ export const FormoAnalyticsContext =
  * @example
  * ```tsx
  * import AsyncStorage from '@react-native-async-storage/async-storage';
- * import { FormoAnalyticsProvider } from '@formo/react-native-analytics';
+ * import { FormoAnalyticsProvider } from '@formo/analytics-react-native';
  *
  * function App() {
  *   return (
@@ -253,7 +253,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderProps> = ({
  *
  * @example
  * ```tsx
- * import { useFormo } from '@formo/react-native-analytics';
+ * import { useFormo } from '@formo/analytics-react-native';
  *
  * function MyScreen() {
  *   const formo = useFormo();
