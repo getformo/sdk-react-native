@@ -96,6 +96,9 @@ export interface IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void>;
 
+  // Event flushing
+  flush(): Promise<void>;
+
   // Traffic source management
   setTrafficSourceFromUrl(url: string): void;
 

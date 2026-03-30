@@ -25,6 +25,7 @@ const defaultContext: IFormoAnalytics = {
   transaction: () => Promise.resolve(),
   identify: () => Promise.resolve(),
   track: () => Promise.resolve(),
+  flush: () => Promise.resolve(),
   setTrafficSourceFromUrl: () => {},
   optOutTracking: () => {},
   optInTracking: () => {},
