@@ -1,0 +1,202 @@
+name: Publish Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write  # Required for OIDC trusted publishing
+  contents: write  # Required for creating GitHub releases
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for changelog generation
+
+      - name: Verify tag is on main branch
+        run: |
+          # Check if the tag is reachable from main branch
+          git fetch origin main
+          if ! git merge-base --is-ancestor ${{ github.sha }} origin/main; then
+            echo "Error: This tag is not on the main branch"
+            echo "Tags must be created on the main branch to trigger a release"
+            echo "Current tag: ${{ github.ref_name }}"
+            exit 1
+          fi
+          echo "Tag is on main branch, proceeding with release"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          cache: 'pnpm'
+          # No registry-url - using OIDC trusted publishing instead
+
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION=${{ steps.version.outputs.version }}
+          PKG_VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Error: Tag version (v$TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            echo "Please ensure package.json version is updated before creating the tag"
+            exit 1
+          fi
+
+          echo "Version match confirmed: $TAG_VERSION"
+
+      - name: Build SDK
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous version tag (second most recent v* tag by version order)
+          # This is more reliable than using git describe which follows commit ancestry
+          CURRENT_TAG=${{ github.ref_name }}
+          PREV_TAG=$(git tag -l 'v*' --sort=-version:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found"
+          else
+            echo "Previous tag: $PREV_TAG"
+          fi
+
+          # Get current date
+          RELEASE_DATE=$(date +%Y-%m-%d)
+          VERSION=${{ steps.version.outputs.version }}
+
+          # Generate changelog with PR links
+          if [ -n "$PREV_TAG" ]; then
+            echo "Generating changelog from $PREV_TAG to $GITHUB_REF_NAME"
+            # Extract commits with PR numbers and format them
+            # Use tab as delimiter to safely handle semicolons and special characters
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"%s	%h" --no-merges)
+          else
+            echo "No previous tag found, using all commits"
+            COMMITS=$(git log --pretty=format:"%s	%h" --no-merges)
+          fi
+
+          # Process commits and categorize them
+          FEATURES=""
+          FIXES=""
+          OTHER=""
+
+          while IFS=$'\t' read -r message hash; do
+            # Skip empty lines
+            [ -z "$message" ] && continue
+
+            # Extract PR number if exists
+            if [[ $message =~ \(#([0-9]+)\) ]]; then
+              PR_NUM="${BASH_REMATCH[1]}"
+              # Remove the (#PR_NUM) from message to avoid duplication (handles with or without space)
+              CLEAN_MESSAGE=$(echo "$message" | sed -E 's/ ?\(#[0-9]+\)//')
+              PR_LINK="[#$PR_NUM](https://github.com/${{ github.repository }}/pull/$PR_NUM)"
+              COMMIT_LINK="[$hash](https://github.com/${{ github.repository }}/commit/$hash)"
+              ITEM="$CLEAN_MESSAGE ($PR_LINK) ($COMMIT_LINK)"
+            else
+              COMMIT_LINK="[$hash](https://github.com/${{ github.repository }}/commit/$hash)"
+              ITEM="$message ($COMMIT_LINK)"
+            fi
+
+            # Categorize by prefix and strip conventional commit prefix
+            if [[ $message =~ ^feat(\([^\)]+\))?: ]]; then
+              # Strip "feat:" or "feat(scope):" from the beginning of ITEM
+              STRIPPED_ITEM=$(echo "$ITEM" | sed -E 's/^feat(\([^)]+\))?: //')
+              FEATURES="${FEATURES}- ${STRIPPED_ITEM}
+          "
+            elif [[ $message =~ ^fix(\([^\)]+\))?: ]]; then
+              # Strip "fix:" or "fix(scope):" from the beginning of ITEM
+              STRIPPED_ITEM=$(echo "$ITEM" | sed -E 's/^fix(\([^)]+\))?: //')
+              FIXES="${FIXES}- ${STRIPPED_ITEM}
+          "
+            else
+              OTHER="${OTHER}- ${ITEM}
+          "
+            fi
+          done <<< "$COMMITS"
+
+          # Create release notes
+          cat > release_notes.md <<EOF
+          $VERSION ($RELEASE_DATE)
+          EOF
+
+          # Add Features section if exists
+          if [ -n "$FEATURES" ]; then
+            cat >> release_notes.md <<EOF
+
+          ## Features
+
+          $FEATURES
+          EOF
+          fi
+
+          # Add Fixes section if exists
+          if [ -n "$FIXES" ]; then
+            cat >> release_notes.md <<EOF
+
+          ## Bug Fixes
+
+          $FIXES
+          EOF
+          fi
+
+          # Add Other changes if exists
+          if [ -n "$OTHER" ]; then
+            cat >> release_notes.md <<EOF
+
+          ## Changes
+
+          $OTHER
+          EOF
+          fi
+
+          # Add npm package link
+          cat >> release_notes.md <<EOF
+
+          ## Install
+
+          \`\`\`bash
+          npm install @formo/react-native-analytics@$VERSION
+          \`\`\`
+
+          [@formo/react-native-analytics $VERSION npm package](https://www.npmjs.com/package/@formo/react-native-analytics/v/$VERSION)
+          EOF
+
+      - name: Publish to npm
+        run: npm publish --provenance
+        # Explicitly use --provenance flag for clarity
+        # OIDC trusted publishing (id-token: write) enables automatic provenance generation
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
