@@ -5,12 +5,6 @@ Formo Analytics SDK for React Native - Track wallet events and user analytics in
 ## Installation
 
 ```bash
-npm install @formo/analytics-react-native @react-native-async-storage/async-storage
-
-# or with yarn
-yarn add @formo/analytics-react-native @react-native-async-storage/async-storage
-
-# or with pnpm
 pnpm add @formo/analytics-react-native @react-native-async-storage/async-storage
 ```
 
