@@ -1,17 +1,17 @@
-# @formo/react-native-analytics
+# @formo/analytics-react-native
 
 Formo Analytics SDK for React Native - Track wallet events and user analytics in mobile dApps.
 
 ## Installation
 
 ```bash
-npm install @formo/react-native-analytics @react-native-async-storage/async-storage
+npm install @formo/analytics-react-native @react-native-async-storage/async-storage
 
 # or with yarn
-yarn add @formo/react-native-analytics @react-native-async-storage/async-storage
+yarn add @formo/analytics-react-native @react-native-async-storage/async-storage
 
 # or with pnpm
-pnpm add @formo/react-native-analytics @react-native-async-storage/async-storage
+pnpm add @formo/analytics-react-native @react-native-async-storage/async-storage
 ```
 
 ### iOS Setup
@@ -26,7 +26,7 @@ cd ios && pod install
 
 ```tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FormoAnalyticsProvider } from '@formo/react-native-analytics';
+import { FormoAnalyticsProvider } from '@formo/analytics-react-native';
 
 function App() {
   return (
@@ -49,7 +49,7 @@ function App() {
 ### 2. Use the hook in your components
 
 ```tsx
-import { useFormo } from '@formo/react-native-analytics';
+import { useFormo } from '@formo/analytics-react-native';
 import { useEffect } from 'react';
 
 function HomeScreen() {
@@ -79,7 +79,7 @@ For dApps using Wagmi for wallet connections, you can enable automatic wallet ev
 import { QueryClient } from '@tanstack/react-query';
 import { createConfig } from 'wagmi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FormoAnalyticsProvider } from '@formo/react-native-analytics';
+import { FormoAnalyticsProvider } from '@formo/analytics-react-native';
 
 const queryClient = new QueryClient();
 const wagmiConfig = createConfig({
@@ -239,7 +239,7 @@ formo.chain({
 Track signature event.
 
 ```typescript
-import { SignatureStatus } from '@formo/react-native-analytics';
+import { SignatureStatus } from '@formo/analytics-react-native';
 
 formo.signature({
   status: SignatureStatus.CONFIRMED,
@@ -254,7 +254,7 @@ formo.signature({
 Track transaction event.
 
 ```typescript
-import { TransactionStatus } from '@formo/react-native-analytics';
+import { TransactionStatus } from '@formo/analytics-react-native';
 
 formo.transaction({
   status: TransactionStatus.BROADCASTED,
