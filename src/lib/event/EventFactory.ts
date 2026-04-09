@@ -372,7 +372,10 @@ class EventFactory implements IEventFactory {
   }
 
   /**
-   * Generate screen view event (mobile equivalent of page)
+   * Generate screen view event as a page event for unified analytics.
+   * Maps screen name to page-equivalent context fields (page_title, page_path, page_url)
+   * so Tinybird materializations (process_sessions, process_sources) can process mobile
+   * screen views alongside web page views. The channel="mobile" distinguishes the source.
    */
   async generateScreenEvent(
     name: string,
@@ -382,12 +385,21 @@ class EventFactory implements IEventFactory {
   ): Promise<IFormoEvent> {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
-    const screenEvent: Partial<IFormoEvent> = {
-      properties: props,
-      type: "screen",
+    // Map screen name to page-equivalent context fields for Tinybird compatibility.
+    // page_path is omitted — Tinybird derives it from page_url via path().
+    // User-supplied context values take precedence (spread last).
+    const screenContext: IFormoEventContext = {
+      page_title: name,
+      page_url: `app://${name}`,
+      ...(context ?? {}),
     };
 
-    return this.getEnrichedEvent(screenEvent, context);
+    const screenEvent: Partial<IFormoEvent> = {
+      properties: props,
+      type: "page",
+    };
+
+    return this.getEnrichedEvent(screenEvent, screenContext);
   }
 
   async generateDetectWalletEvent(
