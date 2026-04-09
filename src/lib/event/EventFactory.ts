@@ -385,12 +385,13 @@ class EventFactory implements IEventFactory {
   ): Promise<IFormoEvent> {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
-    // Map screen name to page-equivalent context fields for Tinybird compatibility
+    // Map screen name to page-equivalent context fields for Tinybird compatibility.
+    // User-supplied context values take precedence (spread last).
     const screenContext: IFormoEventContext = {
-      ...(context ?? {}),
       page_title: name,
       page_path: `/${name}`,
       page_url: `app://${name}`,
+      ...(context ?? {}),
     };
 
     const screenEvent: Partial<IFormoEvent> = {
