@@ -23,4 +23,4 @@ export type TEventChannel = Lowercase<EventChannel>;
 
 // React Native SDK uses mobile channel
 export const CHANNEL: TEventChannel = "mobile";
-export const VERSION = "1";
+export const VERSION = "0";
