@@ -37,6 +37,8 @@ import {
 } from "./types";
 import { toChecksumAddress, getValidAddress } from "./utils";
 import { parseTrafficSource, storeTrafficSource } from "./utils/trafficSource";
+import { captureInstallReferrer } from "./lib/installReferrer";
+import { Linking, EmitterSubscription } from "react-native";
 
 export class FormoAnalytics implements IFormoAnalytics {
   private session: FormoAnalyticsSession;
@@ -44,6 +46,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
   private lifecycleManager?: AppLifecycleManager;
+  private linkingSubscription?: EmitterSubscription;
 
   config: Config;
   currentChainId?: ChainID;
@@ -139,12 +142,53 @@ export class FormoAnalytics implements IFormoAnalytics {
       }
     }
 
+    // Auto-capture deep-link attribution (initial URL + runtime url events).
+    // Runs before installReferrer so a real deep link wins over Play/AdServices.
+    if (analytics.isAutocaptureEnabled("deeplinks")) {
+      try {
+        analytics.startDeepLinkCapture();
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize deep link capture", error);
+      }
+    }
+
+    // Capture install-time attribution (one-shot). Fire and forget — we don't
+    // want to block init on native bridge calls or network fetches.
+    if (analytics.isAutocaptureEnabled("installReferrer")) {
+      captureInstallReferrer({
+        customRefParams: analytics.options.referral?.queryParams,
+        pathPattern: analytics.options.referral?.pathPattern,
+      }).catch((error) => {
+        logger.debug("FormoAnalytics: install referrer capture failed", error);
+      });
+    }
+
     // Call ready callback
     if (options?.ready) {
       options.ready(analytics);
     }
 
     return analytics;
+  }
+
+  /**
+   * Hook into React Native's Linking API to auto-capture traffic source from
+   * the launch URL and any subsequent deep-link opens.
+   */
+  private startDeepLinkCapture(): void {
+    // Initial URL (cold start from a deep link). Fire and forget.
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) this.setTrafficSourceFromUrl(url);
+      })
+      .catch((error) => {
+        logger.debug("FormoAnalytics: Linking.getInitialURL failed", error);
+      });
+
+    // Runtime deep links (foreground opens, universal links).
+    this.linkingSubscription = Linking.addEventListener("url", (event) => {
+      if (event?.url) this.setTrafficSourceFromUrl(event.url);
+    });
   }
 
   /**
@@ -218,6 +262,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     if (this.lifecycleManager) {
       this.lifecycleManager.cleanup();
       this.lifecycleManager = undefined;
+    }
+
+    if (this.linkingSubscription) {
+      this.linkingSubscription.remove();
+      this.linkingSubscription = undefined;
     }
 
     if (this.wagmiHandler) {
@@ -569,7 +618,15 @@ export class FormoAnalytics implements IFormoAnalytics {
    * Check if autocapture is enabled for event type
    */
   public isAutocaptureEnabled(
-    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain" | "lifecycle"
+    eventType:
+      | "connect"
+      | "disconnect"
+      | "signature"
+      | "transaction"
+      | "chain"
+      | "lifecycle"
+      | "deeplinks"
+      | "installReferrer"
   ): boolean {
     if (this.options.autocapture === undefined) {
       return true;

@@ -151,3 +151,32 @@ export function mergeWithStoredTrafficSource(
     ...(context || {}),
   };
 }
+
+/**
+ * Merge a partial traffic source into the stored one, only filling in fields
+ * that are currently empty. Used by the Install Referrer flow so campaign data
+ * from the Play Store / Apple AdServices cannot clobber a deep-link attribution
+ * that arrived earlier in the same cold start.
+ */
+export function mergeTrafficSourceFill(
+  incoming: Partial<ITrafficSource>
+): void {
+  try {
+    const existing = getStoredTrafficSource() || {};
+    const merged: Partial<ITrafficSource> = { ...existing };
+    let changed = false;
+
+    for (const [key, value] of Object.entries(incoming)) {
+      if (value && !merged[key as keyof ITrafficSource]) {
+        merged[key as keyof ITrafficSource] = value as string;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      storeTrafficSource(merged);
+    }
+  } catch (error) {
+    logger.error("Error merging traffic source:", error);
+  }
+}

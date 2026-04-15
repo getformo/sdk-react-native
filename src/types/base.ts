@@ -159,6 +159,27 @@ export interface AutocaptureOptions {
    * @default true
    */
   lifecycle?: boolean;
+
+  /**
+   * Automatically capture traffic source from deep links via React Native's
+   * Linking API. When enabled, the SDK calls Linking.getInitialURL() on init
+   * and subscribes to the `url` event, parsing UTM parameters and referral
+   * codes into the event context.
+   * @default true
+   */
+  deeplinks?: boolean;
+
+  /**
+   * Automatically capture install-time attribution from the platform:
+   * - Android: Google Play Install Referrer API (requires react-native-play-install-referrer)
+   * - iOS: AdServices attribution token (requires react-native-ad-services-attribution)
+   *
+   * Resolved once on first successful fetch and cached; subsequent launches
+   * skip the native call. Silently no-ops when the optional native module
+   * is not installed.
+   * @default true
+   */
+  installReferrer?: boolean;
 }
 
 /**
