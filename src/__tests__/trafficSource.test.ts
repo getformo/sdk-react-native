@@ -4,6 +4,7 @@ import {
   getStoredTrafficSource,
   clearTrafficSource,
   mergeTrafficSourceFill,
+  updateStoredTrafficSource,
 } from "../utils/trafficSource";
 import { initStorageManager } from "../lib/storage";
 
@@ -121,6 +122,63 @@ describe("trafficSource", () => {
       const stored = getStoredTrafficSource();
       expect(stored?.utm_source).toBe("twitter");
       expect(stored?.utm_medium).toBeUndefined();
+    });
+  });
+
+  describe("updateStoredTrafficSource", () => {
+    it("non-marketing deep link preserves existing UTM attribution", () => {
+      // Install referrer or earlier marketing link wrote UTMs
+      storeTrafficSource({
+        utm_source: "google",
+        utm_medium: "cpc",
+        utm_campaign: "spring",
+        referrer: "https://play.google.com/...",
+      });
+
+      // Later a plain deep link like myapp://home arrives — only a referrer
+      const incoming = parseTrafficSource("myapp://home");
+      updateStoredTrafficSource(incoming);
+
+      const stored = getStoredTrafficSource();
+      expect(stored?.utm_source).toBe("google");
+      expect(stored?.utm_medium).toBe("cpc");
+      expect(stored?.utm_campaign).toBe("spring");
+      // referrer updates to the newest landing URL
+      expect(stored?.referrer).toBe("myapp://home");
+    });
+
+    it("marketing deep link overrides stored UTM (last-touch)", () => {
+      storeTrafficSource({
+        utm_source: "google",
+        utm_campaign: "spring",
+        referrer: "https://play.google.com/...",
+      });
+
+      const incoming = parseTrafficSource(
+        "myapp://p?utm_source=twitter&utm_medium=social"
+      );
+      updateStoredTrafficSource(incoming);
+
+      const stored = getStoredTrafficSource();
+      expect(stored?.utm_source).toBe("twitter");
+      expect(stored?.utm_medium).toBe("social");
+      // utm_campaign not present in incoming → preserved from prior attribution
+      expect(stored?.utm_campaign).toBe("spring");
+    });
+
+    it("writes all incoming fields when storage is empty", () => {
+      const incoming = parseTrafficSource(
+        "myapp://p?utm_source=fb&utm_medium=paid&ref=alice"
+      );
+      updateStoredTrafficSource(incoming);
+
+      const stored = getStoredTrafficSource();
+      expect(stored?.utm_source).toBe("fb");
+      expect(stored?.utm_medium).toBe("paid");
+      expect(stored?.ref).toBe("alice");
+      expect(stored?.referrer).toBe(
+        "myapp://p?utm_source=fb&utm_medium=paid&ref=alice"
+      );
     });
   });
 });

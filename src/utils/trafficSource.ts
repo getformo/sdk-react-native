@@ -152,6 +152,48 @@ export function mergeWithStoredTrafficSource(
   };
 }
 
+/** All traffic-source keys used for merge operations. */
+const TRAFFIC_SOURCE_KEYS: (keyof ITrafficSource)[] = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "ref",
+  "referrer",
+];
+
+/**
+ * Update stored traffic source with incoming values. Per-field last-touch with
+ * fallback: non-empty incoming fields win, empty incoming fields preserve the
+ * previously stored value. This matches the Formo web SDK's behavior and
+ * prevents a non-marketing deep link (e.g. "myapp://home" with only a referrer
+ * and no UTM/ref) from destroying existing attribution data written by the
+ * Install Referrer flow or an earlier marketing deep link.
+ */
+export function updateStoredTrafficSource(
+  incoming: Partial<ITrafficSource>
+): void {
+  try {
+    const existing = getStoredTrafficSource() || {};
+    const merged: Partial<ITrafficSource> = {};
+
+    for (const key of TRAFFIC_SOURCE_KEYS) {
+      const incomingVal = incoming[key];
+      const existingVal = existing[key];
+      if (incomingVal) {
+        merged[key] = incomingVal;
+      } else if (existingVal) {
+        merged[key] = existingVal;
+      }
+    }
+
+    storeTrafficSource(merged);
+  } catch (error) {
+    logger.error("Error updating traffic source:", error);
+  }
+}
+
 /**
  * Merge a partial traffic source into the stored one, only filling in fields
  * that are currently empty. Used by the Install Referrer flow so campaign data
@@ -167,8 +209,10 @@ export function mergeTrafficSourceFill(
     let changed = false;
 
     for (const [key, value] of Object.entries(incoming)) {
-      if (value && !merged[key as keyof ITrafficSource]) {
-        merged[key as keyof ITrafficSource] = value as string;
+      if (!value) continue; // skip empty/undefined incoming values
+      const existing = merged[key as keyof ITrafficSource];
+      if (existing === undefined || existing === null || existing === "") {
+        merged[key as keyof ITrafficSource] = String(value);
         changed = true;
       }
     }

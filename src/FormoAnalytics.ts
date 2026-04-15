@@ -36,7 +36,7 @@ import {
   TransactionStatus,
 } from "./types";
 import { toChecksumAddress, getValidAddress } from "./utils";
-import { parseTrafficSource, storeTrafficSource } from "./utils/trafficSource";
+import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
 
@@ -131,6 +131,32 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Capture attribution BEFORE lifecycle tracking so the first
+    // Application Installed/Opened events carry utm_*/ref/referrer context.
+    //
+    // Deep-link initial URL is awaited because Linking.getInitialURL() is a
+    // fast native bridge call and we need its result before lifecycle events
+    // fire. The url-event subscription is set up synchronously for runtime
+    // deep links. Install-referrer capture (Play / AdServices) is fire-and-
+    // forget since it involves potentially-slow network I/O on iOS and is
+    // best-effort; it'll still populate attribution for subsequent events.
+    if (analytics.isAutocaptureEnabled("deeplinks")) {
+      try {
+        await analytics.startDeepLinkCapture();
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize deep link capture", error);
+      }
+    }
+
+    if (analytics.isAutocaptureEnabled("installReferrer")) {
+      captureInstallReferrer({
+        customRefParams: analytics.options.referral?.queryParams,
+        pathPattern: analytics.options.referral?.pathPattern,
+      }).catch((error) => {
+        logger.debug("FormoAnalytics: install referrer capture failed", error);
+      });
+    }
+
     // Initialize lifecycle tracking if enabled
     // Wrapped in try-catch so a transient storage failure doesn't prevent SDK init
     if (analytics.isAutocaptureEnabled("lifecycle")) {
@@ -140,27 +166,6 @@ export class FormoAnalytics implements IFormoAnalytics {
       } catch (error) {
         logger.error("FormoAnalytics: Failed to initialize lifecycle tracking", error);
       }
-    }
-
-    // Auto-capture deep-link attribution (initial URL + runtime url events).
-    // Runs before installReferrer so a real deep link wins over Play/AdServices.
-    if (analytics.isAutocaptureEnabled("deeplinks")) {
-      try {
-        analytics.startDeepLinkCapture();
-      } catch (error) {
-        logger.error("FormoAnalytics: Failed to initialize deep link capture", error);
-      }
-    }
-
-    // Capture install-time attribution (one-shot). Fire and forget — we don't
-    // want to block init on native bridge calls or network fetches.
-    if (analytics.isAutocaptureEnabled("installReferrer")) {
-      captureInstallReferrer({
-        customRefParams: analytics.options.referral?.queryParams,
-        pathPattern: analytics.options.referral?.pathPattern,
-      }).catch((error) => {
-        logger.debug("FormoAnalytics: install referrer capture failed", error);
-      });
     }
 
     // Call ready callback
@@ -173,17 +178,16 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /**
    * Hook into React Native's Linking API to auto-capture traffic source from
-   * the launch URL and any subsequent deep-link opens.
+   * the launch URL and any subsequent deep-link opens. Awaits the initial URL
+   * so attribution is in storage before the first lifecycle event fires.
    */
-  private startDeepLinkCapture(): void {
-    // Initial URL (cold start from a deep link). Fire and forget.
-    Linking.getInitialURL()
-      .then((url) => {
-        if (url) this.setTrafficSourceFromUrl(url);
-      })
-      .catch((error) => {
-        logger.debug("FormoAnalytics: Linking.getInitialURL failed", error);
-      });
+  private async startDeepLinkCapture(): Promise<void> {
+    try {
+      const url = await Linking.getInitialURL();
+      if (url) this.setTrafficSourceFromUrl(url);
+    } catch (error) {
+      logger.debug("FormoAnalytics: Linking.getInitialURL failed", error);
+    }
 
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
@@ -239,7 +243,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       this.options.referral?.queryParams,
       this.options.referral?.pathPattern
     );
-    storeTrafficSource(trafficSource);
+    // Per-field merge: incoming non-empty fields win, empty fields preserve
+    // stored values. A non-marketing deep link (e.g. "myapp://home") with only
+    // a referrer will not destroy previously captured utm_*/ref attribution.
+    updateStoredTrafficSource(trafficSource);
     logger.debug("Traffic source set from URL:", trafficSource);
   }
 

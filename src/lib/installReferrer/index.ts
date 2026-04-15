@@ -27,7 +27,7 @@
 
 import { Platform } from "react-native";
 import { logger } from "../logger";
-import { storage } from "../storage";
+import { storage, getStorageManager } from "../storage";
 import { LOCAL_INSTALL_REFERRER_RESOLVED_KEY } from "../../constants/storage";
 import {
   parseTrafficSource,
@@ -73,6 +73,19 @@ export async function captureInstallReferrer(
   options: CaptureOptions = {}
 ): Promise<void> {
   try {
+    // The one-shot flag is only useful if it can persist across launches.
+    // Without AsyncStorage (MemoryStorage fallback) the flag is lost every
+    // restart, so we'd re-hit the native API every cold start. Mirror the
+    // lifecycle manager's guard and skip capture entirely in that case.
+    const hasPersistentStorage =
+      getStorageManager()?.hasPersistentStorage() ?? false;
+    if (!hasPersistentStorage) {
+      logger.debug(
+        "InstallReferrer: persistent storage unavailable, skipping capture"
+      );
+      return;
+    }
+
     const resolved = storage().get(LOCAL_INSTALL_REFERRER_RESOLVED_KEY);
     if (resolved === "true") {
       logger.debug("InstallReferrer: already resolved, skipping");
@@ -115,27 +128,36 @@ async function captureAndroidReferrer(
     return false;
   }
 
-  const info = await new Promise<{ installReferrer?: string } | null>(
-    (resolve) => {
-      try {
-        PlayInstallReferrer!.getInstallReferrerInfo((result, error) => {
-          if (error) {
-            logger.debug("InstallReferrer: Play API error", error);
-            resolve(null);
-            return;
-          }
-          resolve(result);
-        });
-      } catch (e) {
-        logger.debug("InstallReferrer: Play API threw", e);
-        resolve(null);
-      }
+  // Distinguish "native API errored" (retry next launch) from "native API
+  // succeeded but no referrer data" (organic install — mark resolved so we
+  // don't re-call every launch).
+  const result = await new Promise<{
+    ok: boolean;
+    info: { installReferrer?: string } | null;
+  }>((resolve) => {
+    try {
+      PlayInstallReferrer!.getInstallReferrerInfo((info, error) => {
+        if (error) {
+          logger.debug("InstallReferrer: Play API error", error);
+          resolve({ ok: false, info: null });
+          return;
+        }
+        resolve({ ok: true, info: info ?? null });
+      });
+    } catch (e) {
+      logger.debug("InstallReferrer: Play API threw", e);
+      resolve({ ok: false, info: null });
     }
-  );
+  });
 
-  const referrerQuery = info?.installReferrer;
+  if (!result.ok) return false; // errored — retry next launch
+
+  const referrerQuery = result.info?.installReferrer;
   if (!referrerQuery) {
-    return false;
+    // Organic install (or untracked). API answered definitively — mark
+    // resolved so we don't ask Play again on every launch.
+    logger.debug("InstallReferrer: no Play referrer (organic install)");
+    return true;
   }
 
   // The referrer string is already URL-encoded UTM params, e.g.
@@ -187,11 +209,15 @@ async function captureIOSAttribution(): Promise<boolean> {
   if (!token) return false;
 
   let data: Record<string, unknown> | null = null;
+  // Guard against poor-network hangs — this runs fire-and-forget during init.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
   try {
     const response = await fetch("https://api-adservices.apple.com/api/v1/", {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: token,
+      signal: controller.signal,
     });
     if (!response.ok) {
       logger.debug(
@@ -203,6 +229,8 @@ async function captureIOSAttribution(): Promise<boolean> {
   } catch (e) {
     logger.debug("InstallReferrer: AdServices exchange failed", e);
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!data || data.attribution === false) {
