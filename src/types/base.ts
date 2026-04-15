@@ -159,18 +159,27 @@ export interface AutocaptureOptions {
    * @default true
    */
   lifecycle?: boolean;
+}
 
+/**
+ * Configuration options for attribution capture.
+ *
+ * Attribution is not an event type — it's context enrichment that decorates
+ * every tracked event with `utm_*`, `ref`, and `referrer` fields. These
+ * options control the SDK's automatic attribution data sources.
+ */
+export interface AttributionOptions {
   /**
-   * Automatically capture traffic source from deep links via React Native's
-   * Linking API. When enabled, the SDK calls Linking.getInitialURL() on init
-   * and subscribes to the `url` event, parsing UTM parameters and referral
-   * codes into the event context.
+   * Capture traffic source from deep links via React Native's Linking API.
+   * When enabled, the SDK calls Linking.getInitialURL() on init and subscribes
+   * to the `url` event, parsing UTM parameters and referral codes into the
+   * event context.
    * @default true
    */
   deeplinks?: boolean;
 
   /**
-   * Automatically capture install-time attribution from the platform:
+   * Capture install-time attribution from the platform on first launch:
    * - Android: Google Play Install Referrer API (requires react-native-play-install-referrer)
    * - iOS: AdServices attribution token (requires react-native-ad-services-attribution)
    *
@@ -251,6 +260,16 @@ export interface Options {
    * @default true
    */
   autocapture?: boolean | AutocaptureOptions;
+  /**
+   * Control attribution context capture (deep links and install referrer).
+   * Attribution decorates every tracked event with `utm_*`, `ref`, and
+   * `referrer` fields — it is not itself an event type.
+   * - `false`: Disable all attribution capture
+   * - `true`: Enable all attribution sources (default)
+   * - `AttributionOptions`: Granular control over specific sources
+   * @default true
+   */
+  attribution?: boolean | AttributionOptions;
   /**
    * Wagmi integration configuration
    * When provided, the SDK will hook into Wagmi's event system

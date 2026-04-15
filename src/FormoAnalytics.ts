@@ -140,7 +140,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     // deep links. Install-referrer capture (Play / AdServices) is fire-and-
     // forget since it involves potentially-slow network I/O on iOS and is
     // best-effort; it'll still populate attribution for subsequent events.
-    if (analytics.isAutocaptureEnabled("deeplinks")) {
+    if (analytics.isAttributionEnabled("deeplinks")) {
       try {
         await analytics.startDeepLinkCapture();
       } catch (error) {
@@ -148,7 +148,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       }
     }
 
-    if (analytics.isAutocaptureEnabled("installReferrer")) {
+    if (analytics.isAttributionEnabled("installReferrer")) {
       captureInstallReferrer({
         customRefParams: analytics.options.referral?.queryParams,
         pathPattern: analytics.options.referral?.pathPattern,
@@ -622,7 +622,10 @@ export class FormoAnalytics implements IFormoAnalytics {
   }
 
   /**
-   * Check if autocapture is enabled for event type
+   * Check if autocapture is enabled for a given event type.
+   * Applies only to event-generating behaviors (wallet events, lifecycle
+   * events). Attribution is controlled separately via `options.attribution`
+   * because it enriches events rather than generating them.
    */
   public isAutocaptureEnabled(
     eventType:
@@ -632,8 +635,6 @@ export class FormoAnalytics implements IFormoAnalytics {
       | "transaction"
       | "chain"
       | "lifecycle"
-      | "deeplinks"
-      | "installReferrer"
   ): boolean {
     if (this.options.autocapture === undefined) {
       return true;
@@ -649,6 +650,32 @@ export class FormoAnalytics implements IFormoAnalytics {
     ) {
       const eventConfig = this.options.autocapture[eventType];
       return eventConfig !== false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if an attribution source is enabled. Attribution is not an event
+   * type — it decorates every tracked event with `utm_*`, `ref`, and
+   * `referrer` context fields.
+   */
+  public isAttributionEnabled(
+    source: "deeplinks" | "installReferrer"
+  ): boolean {
+    if (this.options.attribution === undefined) {
+      return true;
+    }
+
+    if (typeof this.options.attribution === "boolean") {
+      return this.options.attribution;
+    }
+
+    if (
+      this.options.attribution !== null &&
+      typeof this.options.attribution === "object"
+    ) {
+      return this.options.attribution[source] !== false;
     }
 
     return true;
