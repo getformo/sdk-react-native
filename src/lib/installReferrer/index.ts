@@ -220,13 +220,20 @@ async function captureIOSAttribution(): Promise<boolean> {
       signal: controller.signal,
     });
     if (!response.ok) {
+      // 4xx are permanent (400 = bad/consumed token, 404 = past Apple's ~24h
+      // attribution window). Mark resolved so we stop retrying. 5xx and
+      // other transient failures return false so we re-attempt next launch.
+      const permanent = response.status >= 400 && response.status < 500;
       logger.debug(
-        `InstallReferrer: AdServices returned ${response.status}, skipping`
+        `InstallReferrer: AdServices returned ${response.status}, ${
+          permanent ? "permanent — marking resolved" : "transient — will retry"
+        }`
       );
-      return false;
+      return permanent;
     }
     data = (await response.json()) as Record<string, unknown>;
   } catch (e) {
+    // Network / abort / parse errors — treat as transient.
     logger.debug("InstallReferrer: AdServices exchange failed", e);
     return false;
   } finally {
