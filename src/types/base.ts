@@ -162,6 +162,36 @@ export interface AutocaptureOptions {
 }
 
 /**
+ * Configuration options for attribution capture.
+ *
+ * Attribution is not an event type — it's context enrichment that decorates
+ * every tracked event with `utm_*`, `ref`, and `referrer` fields. These
+ * options control the SDK's automatic attribution data sources.
+ */
+export interface AttributionOptions {
+  /**
+   * Capture traffic source from deep links via React Native's Linking API.
+   * When enabled, the SDK calls Linking.getInitialURL() on init and subscribes
+   * to the `url` event, parsing UTM parameters and referral codes into the
+   * event context.
+   * @default true
+   */
+  deeplinks?: boolean;
+
+  /**
+   * Capture install-time attribution from the platform on first launch:
+   * - Android: Google Play Install Referrer API (requires react-native-play-install-referrer)
+   * - iOS: AdServices attribution token (requires react-native-ad-services-attribution)
+   *
+   * Resolved once on first successful fetch and cached; subsequent launches
+   * skip the native call. Silently no-ops when the optional native module
+   * is not installed.
+   * @default true
+   */
+  installReferrer?: boolean;
+}
+
+/**
  * Configuration options for Wagmi integration
  * Allows the SDK to hook into Wagmi v2 wallet events
  */
@@ -230,6 +260,16 @@ export interface Options {
    * @default true
    */
   autocapture?: boolean | AutocaptureOptions;
+  /**
+   * Control attribution context capture (deep links and install referrer).
+   * Attribution decorates every tracked event with `utm_*`, `ref`, and
+   * `referrer` fields — it is not itself an event type.
+   * - `false`: Disable all attribution capture
+   * - `true`: Enable all attribution sources (default)
+   * - `AttributionOptions`: Granular control over specific sources
+   * @default true
+   */
+  attribution?: boolean | AttributionOptions;
   /**
    * Wagmi integration configuration
    * When provided, the SDK will hook into Wagmi's event system

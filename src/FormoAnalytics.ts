@@ -36,7 +36,9 @@ import {
   TransactionStatus,
 } from "./types";
 import { toChecksumAddress, getValidAddress } from "./utils";
-import { parseTrafficSource, storeTrafficSource } from "./utils/trafficSource";
+import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
+import { captureInstallReferrer } from "./lib/installReferrer";
+import { Linking, EmitterSubscription } from "react-native";
 
 export class FormoAnalytics implements IFormoAnalytics {
   private session: FormoAnalyticsSession;
@@ -44,6 +46,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
   private lifecycleManager?: AppLifecycleManager;
+  private linkingSubscription?: EmitterSubscription;
 
   config: Config;
   currentChainId?: ChainID;
@@ -128,6 +131,32 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Capture attribution BEFORE lifecycle tracking so the first
+    // Application Installed/Opened events carry utm_*/ref/referrer context.
+    //
+    // Deep-link initial URL is awaited because Linking.getInitialURL() is a
+    // fast native bridge call and we need its result before lifecycle events
+    // fire. The url-event subscription is set up synchronously for runtime
+    // deep links. Install-referrer capture (Play / AdServices) is fire-and-
+    // forget since it involves potentially-slow network I/O on iOS and is
+    // best-effort; it'll still populate attribution for subsequent events.
+    if (analytics.isAttributionEnabled("deeplinks")) {
+      try {
+        await analytics.startDeepLinkCapture();
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize deep link capture", error);
+      }
+    }
+
+    if (analytics.isAttributionEnabled("installReferrer")) {
+      captureInstallReferrer({
+        customRefParams: analytics.options.referral?.queryParams,
+        pathPattern: analytics.options.referral?.pathPattern,
+      }).catch((error) => {
+        logger.debug("FormoAnalytics: install referrer capture failed", error);
+      });
+    }
+
     // Initialize lifecycle tracking if enabled
     // Wrapped in try-catch so a transient storage failure doesn't prevent SDK init
     if (analytics.isAutocaptureEnabled("lifecycle")) {
@@ -145,6 +174,25 @@ export class FormoAnalytics implements IFormoAnalytics {
     }
 
     return analytics;
+  }
+
+  /**
+   * Hook into React Native's Linking API to auto-capture traffic source from
+   * the launch URL and any subsequent deep-link opens. Awaits the initial URL
+   * so attribution is in storage before the first lifecycle event fires.
+   */
+  private async startDeepLinkCapture(): Promise<void> {
+    try {
+      const url = await Linking.getInitialURL();
+      if (url) this.setTrafficSourceFromUrl(url);
+    } catch (error) {
+      logger.debug("FormoAnalytics: Linking.getInitialURL failed", error);
+    }
+
+    // Runtime deep links (foreground opens, universal links).
+    this.linkingSubscription = Linking.addEventListener("url", (event) => {
+      if (event?.url) this.setTrafficSourceFromUrl(event.url);
+    });
   }
 
   /**
@@ -195,7 +243,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       this.options.referral?.queryParams,
       this.options.referral?.pathPattern
     );
-    storeTrafficSource(trafficSource);
+    // Per-field merge: incoming non-empty fields win, empty fields preserve
+    // stored values. A non-marketing deep link (e.g. "myapp://home") with only
+    // a referrer will not destroy previously captured utm_*/ref attribution.
+    updateStoredTrafficSource(trafficSource);
     logger.debug("Traffic source set from URL:", trafficSource);
   }
 
@@ -218,6 +269,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     if (this.lifecycleManager) {
       this.lifecycleManager.cleanup();
       this.lifecycleManager = undefined;
+    }
+
+    if (this.linkingSubscription) {
+      this.linkingSubscription.remove();
+      this.linkingSubscription = undefined;
     }
 
     if (this.wagmiHandler) {
@@ -566,10 +622,19 @@ export class FormoAnalytics implements IFormoAnalytics {
   }
 
   /**
-   * Check if autocapture is enabled for event type
+   * Check if autocapture is enabled for a given event type.
+   * Applies only to event-generating behaviors (wallet events, lifecycle
+   * events). Attribution is controlled separately via `options.attribution`
+   * because it enriches events rather than generating them.
    */
   public isAutocaptureEnabled(
-    eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain" | "lifecycle"
+    eventType:
+      | "connect"
+      | "disconnect"
+      | "signature"
+      | "transaction"
+      | "chain"
+      | "lifecycle"
   ): boolean {
     if (this.options.autocapture === undefined) {
       return true;
@@ -585,6 +650,32 @@ export class FormoAnalytics implements IFormoAnalytics {
     ) {
       const eventConfig = this.options.autocapture[eventType];
       return eventConfig !== false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if an attribution source is enabled. Attribution is not an event
+   * type — it decorates every tracked event with `utm_*`, `ref`, and
+   * `referrer` context fields.
+   */
+  public isAttributionEnabled(
+    source: "deeplinks" | "installReferrer"
+  ): boolean {
+    if (this.options.attribution === undefined) {
+      return true;
+    }
+
+    if (typeof this.options.attribution === "boolean") {
+      return this.options.attribution;
+    }
+
+    if (
+      this.options.attribution !== null &&
+      typeof this.options.attribution === "object"
+    ) {
+      return this.options.attribution[source] !== false;
     }
 
     return true;

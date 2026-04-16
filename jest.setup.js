@@ -14,6 +14,10 @@ jest.mock('react-native', () => ({
     currentState: 'active',
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },
+  Linking: {
+    getInitialURL: jest.fn().mockResolvedValue(null),
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+  },
   NativeModules: {
     RNDeviceInfo: {
       deviceId: 'test-device-id',
