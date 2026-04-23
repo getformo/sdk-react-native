@@ -31,7 +31,7 @@ jobs:
           echo "Tag is on main branch, proceeding with release"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -193,7 +193,7 @@ jobs:
         # OIDC trusted publishing (id-token: write) enables automatic provenance generation
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           body_path: release_notes.md
           draft: false
