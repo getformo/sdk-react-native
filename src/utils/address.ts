@@ -1,11 +1,19 @@
 /**
  * Address validation and checksum utilities
  *
- * Uses ethereum-cryptography for proper EIP-55 checksum computation
+ * Supports both EVM and Solana addresses.
+ *
+ * Uses ethereum-cryptography for proper EIP-55 checksum computation.
  */
 
 import { keccak256 } from "ethereum-cryptography/keccak.js";
 import { utf8ToBytes } from "ethereum-cryptography/utils.js";
+import {
+  isSolanaAddress,
+  getValidSolanaAddress,
+  isBlockedSolanaAddress,
+} from "../solana/address";
+import { isSolanaChainId } from "../solana/types";
 
 /**
  * Convert Uint8Array to hex string
@@ -17,7 +25,7 @@ function toHex(bytes: Uint8Array): string {
 }
 
 /**
- * Check if a string is a valid Ethereum address
+ * Check if a string is a valid Ethereum (EVM) address
  */
 export function isValidAddress(address: string): boolean {
   if (!address) return false;
@@ -56,7 +64,7 @@ export function toChecksumAddress(address: string): string {
 }
 
 /**
- * Get valid address or null
+ * Get a valid (trimmed) EVM address, or null if invalid.
  */
 export function getValidAddress(
   address: string | undefined | null
@@ -68,7 +76,56 @@ export function getValidAddress(
 }
 
 /**
- * Blocked addresses that should not emit events
+ * Validates an EVM address and returns it in checksummed format.
+ */
+export function validateAndChecksumAddress(
+  address: string
+): string | undefined {
+  const validAddress = getValidAddress(address);
+  return validAddress ? toChecksumAddress(validAddress) : undefined;
+}
+
+/**
+ * Validates an address for both EVM and Solana chains.
+ *
+ * For EVM addresses, returns checksummed format.
+ * For Solana addresses, returns the Base58 address as-is.
+ *
+ * When chainId is explicitly provided, validation is strict:
+ * - Solana chainId → only Solana validation
+ * - Non-Solana chainId → only EVM validation
+ *
+ * When chainId is omitted, EVM is tried first with Solana fallback.
+ */
+export function validateAddress(
+  address: string,
+  chainId?: number | null
+): string | undefined {
+  // Explicit Solana chainId → validate ONLY as Solana
+  if (chainId !== undefined && chainId !== null && isSolanaChainId(chainId)) {
+    return getValidSolanaAddress(address) || undefined;
+  }
+
+  // Explicit non-Solana chainId → validate ONLY as EVM
+  if (chainId !== undefined && chainId !== null) {
+    return validateAndChecksumAddress(address);
+  }
+
+  // No chainId → try EVM first, then Solana fallback
+  const validEvmAddress = validateAndChecksumAddress(address);
+  if (validEvmAddress) {
+    return validEvmAddress;
+  }
+
+  if (isSolanaAddress(address)) {
+    return getValidSolanaAddress(address) || undefined;
+  }
+
+  return undefined;
+}
+
+/**
+ * Blocked EVM addresses that should not emit events
  * (zero address, dead address)
  */
 const BLOCKED_ADDRESSES = new Set<string>([
@@ -77,8 +134,22 @@ const BLOCKED_ADDRESSES = new Set<string>([
 ]);
 
 /**
- * Check if address is in blocked list
+ * Check if an address is in a blocked list.
+ * Handles both EVM (zero/dead addresses) and Solana (system program) blocks.
  */
 export function isBlockedAddress(address: string): boolean {
-  return BLOCKED_ADDRESSES.has(address.toLowerCase());
+  if (!address || typeof address !== "string") return false;
+
+  const trimmed = address.trim();
+  const normalized = trimmed.toLowerCase();
+
+  if (normalized.startsWith("0x") && normalized.length === 42) {
+    return BLOCKED_ADDRESSES.has(normalized);
+  }
+
+  if (isSolanaAddress(trimmed)) {
+    return isBlockedSolanaAddress(trimmed);
+  }
+
+  return false;
 }

@@ -35,7 +35,7 @@ import {
   TrackingOptions,
   TransactionStatus,
 } from "./types";
-import { toChecksumAddress, getValidAddress } from "./utils";
+import { validateAddress } from "./utils";
 import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
@@ -306,8 +306,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       return;
     }
 
-    const checksummedAddress = this.validateAndChecksumAddress(address);
-    if (!checksummedAddress) {
+    const validatedAddress = this.validateAndChecksumAddress(address, chainId);
+    if (!validatedAddress) {
       logger.warn(`Connect: Invalid address provided ("${address}")`);
       return;
     }
@@ -315,14 +315,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Track event before updating state so connect events TO excluded chains are tracked
     await this.trackEvent(
       EventType.CONNECT,
-      { chainId, address: checksummedAddress },
+      { chainId, address: validatedAddress },
       properties,
       context,
       callback
     );
 
     this.currentChainId = chainId;
-    this.currentAddress = checksummedAddress;
+    this.currentAddress = validatedAddress;
   }
 
   /**
@@ -514,6 +514,8 @@ export class FormoAnalytics implements IFormoAnalytics {
           return;
         }
         this.currentAddress = validAddress;
+        // Note: validateAddress returns Solana addresses unchanged (Base58, case-sensitive)
+        // and EVM addresses checksummed.
       } else {
         this.currentAddress = undefined;
       }
@@ -760,11 +762,17 @@ export class FormoAnalytics implements IFormoAnalytics {
   }
 
   /**
-   * Validate and checksum address
+   * Validate and normalize an address for the given chain.
+   *
+   * EVM addresses are returned in EIP-55 checksum format.
+   * Solana addresses are returned as-is (Base58 is case-sensitive).
+   * When chainId is omitted, EVM is tried first with Solana as fallback.
    */
-  private validateAndChecksumAddress(address: string): Address | undefined {
-    const validAddress = getValidAddress(address);
-    return validAddress ? toChecksumAddress(validAddress) : undefined;
+  private validateAndChecksumAddress(
+    address: string,
+    chainId?: ChainID
+  ): Address | undefined {
+    return validateAddress(address, chainId);
   }
 
   /**
