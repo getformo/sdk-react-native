@@ -39,8 +39,7 @@ import {
   TransactionStatus,
 } from "../../types";
 import {
-  toChecksumAddress,
-  getValidAddress,
+  validateAddress,
   toSnakeCase,
   mergeDeepRight,
   getStoredTrafficSource,
@@ -337,12 +336,11 @@ class EventFactory implements IEventFactory {
     commonEventData.anonymous_id = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
 
     // Handle address - convert undefined to null for consistency
-    const validAddress = getValidAddress(formoEvent.address);
-    if (validAddress) {
-      commonEventData.address = toChecksumAddress(validAddress);
-    } else {
-      commonEventData.address = null;
-    }
+    // Try EVM first, then Solana fallback (chainId is not always present here).
+    const validAddress = formoEvent.address
+      ? validateAddress(formoEvent.address)
+      : undefined;
+    commonEventData.address = validAddress ?? null;
 
     const processedEvent = mergeDeepRight(
       formoEvent as Record<string, unknown>,
@@ -680,10 +678,7 @@ class EventFactory implements IEventFactory {
 
     // Set address if not already set by the specific event generator
     if (formoEvent.address === undefined || formoEvent.address === null) {
-      const validAddress = getValidAddress(address);
-      formoEvent.address = validAddress
-        ? toChecksumAddress(validAddress)
-        : null;
+      formoEvent.address = address ? validateAddress(address) ?? null : null;
     }
     formoEvent.user_id = userId || null;
 
