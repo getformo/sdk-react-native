@@ -34,9 +34,8 @@ export const SOLANA_SYSTEM_ADDRESSES = {
 } as const;
 
 function isValidBase58String(str: string): boolean {
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
-    if (ch === undefined || !BASE58_CHAR_SET.has(ch)) {
+  for (const ch of str) {
+    if (!BASE58_CHAR_SET.has(ch)) {
       return false;
     }
   }

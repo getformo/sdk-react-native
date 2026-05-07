@@ -117,11 +117,7 @@ export function validateAddress(
     return validEvmAddress;
   }
 
-  if (isSolanaAddress(address)) {
-    return getValidSolanaAddress(address) || undefined;
-  }
-
-  return undefined;
+  return getValidSolanaAddress(address) || undefined;
 }
 
 /**
@@ -141,10 +137,9 @@ export function isBlockedAddress(address: string): boolean {
   if (!address || typeof address !== "string") return false;
 
   const trimmed = address.trim();
-  const normalized = trimmed.toLowerCase();
 
-  if (normalized.startsWith("0x") && normalized.length === 42) {
-    return BLOCKED_ADDRESSES.has(normalized);
+  if (isValidAddress(trimmed)) {
+    return BLOCKED_ADDRESSES.has(trimmed.toLowerCase());
   }
 
   if (isSolanaAddress(trimmed)) {
