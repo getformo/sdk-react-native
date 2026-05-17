@@ -314,10 +314,26 @@ describe('FormoAnalytics', () => {
         chainId: 1,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
         message: 'test message',
-        signatureHash: '0xabc123',
       });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+
+    it('never forwards a signatureHash to the event pipeline (C1)', async () => {
+      await analytics.signature({
+        status: SignatureStatus.CONFIRMED,
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+        message: 'test message',
+        // signatureHash was removed from the API; a caller forcing it in
+        // must never reach the emitted event.
+        signatureHash: '0x' + 'a'.repeat(130),
+      } as any);
+
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
+      const emitted = mockEventManager.addEvent.mock.calls[0][0];
+      expect(emitted).not.toHaveProperty('signatureHash');
+      expect(JSON.stringify(emitted)).not.toContain('a'.repeat(130));
     });
   });
 

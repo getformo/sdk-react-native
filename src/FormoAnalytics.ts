@@ -401,13 +401,11 @@ export class FormoAnalytics implements IFormoAnalytics {
       chainId,
       address,
       message,
-      signatureHash,
     }: {
       status: SignatureStatus;
       chainId?: ChainID;
       address: Address;
       message: string;
-      signatureHash?: string;
     },
     properties?: IFormoEventProperties,
     context?: IFormoEventContext,
@@ -424,7 +422,6 @@ export class FormoAnalytics implements IFormoAnalytics {
         ...(chainId !== undefined && chainId !== null && { chainId }),
         address,
         message,
-        ...(signatureHash && { signatureHash }),
       },
       properties,
       context,
