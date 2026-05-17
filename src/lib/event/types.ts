@@ -66,7 +66,6 @@ export interface IEventFactory {
     chainId: ChainID | undefined,
     address: Address,
     message: string,
-    signatureHash?: string,
     properties?: IFormoEventProperties,
     context?: IFormoEventContext
   ): Promise<IFormoEvent>;

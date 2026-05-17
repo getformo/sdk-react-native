@@ -33,7 +33,6 @@ interface IFormoAnalyticsInstance {
     chainId: number;
     address: string;
     message: string;
-    signatureHash?: string;
   }): Promise<void>;
   transaction(params: {
     status: TransactionStatus;
@@ -362,13 +361,11 @@ export class WagmiEventHandler {
 
     try {
       let status: SignatureStatus;
-      let signatureHash: string | undefined;
 
       if (state.status === "pending") {
         status = SignatureStatus.REQUESTED;
       } else if (state.status === "success") {
         status = SignatureStatus.CONFIRMED;
-        signatureHash = state.data as string;
       } else if (state.status === "error") {
         status = SignatureStatus.REJECTED;
       } else {
@@ -394,7 +391,6 @@ export class WagmiEventHandler {
         chainId,
         address,
         message,
-        ...(signatureHash && { signatureHash }),
       }).catch((error) => {
         logger.error("WagmiEventHandler: Error tracking signature:", error);
       });
