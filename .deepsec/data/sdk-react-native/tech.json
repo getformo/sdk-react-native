@@ -1,0 +1,12 @@
+{
+  "tags": [
+    "github-actions",
+    "node",
+    "react"
+  ],
+  "sentinels": [
+    "package.json"
+  ],
+  "detectedAt": "2026-05-16T23:06:59.117Z",
+  "rootPath": "/Users/yos/sdk-react-native"
+}
