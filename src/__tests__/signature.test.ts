@@ -1,6 +1,6 @@
 import { WagmiEventHandler } from "../lib/wagmi/WagmiEventHandler";
 
-// A realistic 65-byte ECDSA signature (the replayable credential C1 leaked).
+// A realistic 65-byte ECDSA signature (the replayable credential we must not leak).
 const RAW_SIGNATURE = "0x" + "a".repeat(130);
 
 // Build a WagmiEventHandler with the formo boundary mocked. The wagmi/query
@@ -32,7 +32,7 @@ function makeHandler() {
 
 const flat = (obj: unknown) => JSON.stringify(obj);
 
-describe("C1: signature autocapture must never emit the raw signature", () => {
+describe("signature autocapture must never emit the raw signature", () => {
   it("signMessage: no signatureHash, no raw signature value", () => {
     const { signature, fire } = makeHandler();
 

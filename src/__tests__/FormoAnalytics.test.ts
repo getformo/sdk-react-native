@@ -319,7 +319,7 @@ describe('FormoAnalytics', () => {
       expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
 
-    it('never forwards a signatureHash to the event pipeline (C1)', async () => {
+    it('never forwards a signatureHash to the event pipeline', async () => {
       await analytics.signature({
         status: SignatureStatus.CONFIRMED,
         chainId: 1,

@@ -372,10 +372,6 @@ export class WagmiEventHandler {
         return;
       }
 
-      // C1: never capture the produced signature (`state.data`) — it is a
-      // replayable permit/Permit2/SIWE bearer credential. The signed
-      // message itself is still captured (status alone is insufficient
-      // for the analytics use case).
       let message: string;
       if (mutationType === "signMessage") {
         message = (variables.message as string) || "";
