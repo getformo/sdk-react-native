@@ -11,11 +11,43 @@ onlyBuiltDependencies: []
 blockExoticSubdeps: true
 
 # 3. Minimum release age (in minutes)
-# Wait 24 hours before installing newly published versions.
+# Wait 7 days before installing newly published versions.
 # Malware is usually detected quickly, so this avoids the exposure window.
-minimumReleaseAge: 1440
+minimumReleaseAge: 10080
 
 # 4. Trust policy
 # Prevent installation if a package's trust level has decreased
 # (e.g., was published by trusted publisher, now only has provenance).
 trustPolicy: no-downgrade
+
+# Exempt transitively-pulled legacy majors that predate npm provenance.
+# Newer majors of these packages are attested, which triggers the
+# trust-downgrade check on older lines that are not actually compromised.
+trustPolicyExclude:
+  - 'ua-parser-js@0.7.41'
+
+# Dependency overrides
+# Pin transitive deps to patched versions for advisories not yet fixed upstream.
+overrides:
+  '@babel/plugin-transform-modules-systemjs': '>=7.29.4'
+  '@react-native-community/cli': '>=17.0.1'
+  '@react-native-community/cli-server-api': '>=17.0.1'
+  '@xmldom/xmldom': '>=0.8.12'
+  'brace-expansion@1': '>=1.1.13 <2'
+  'brace-expansion@2': '>=2.0.3 <3'
+  'fast-xml-parser': '>=4.5.5'
+  'minimatch@3': '>=3.1.5 <4'
+  'minimatch@5': '>=5.1.9 <6'
+  'minimatch@9': '>=9.0.9 <10'
+  'minimatch@10': '>=10.2.4'
+  'node-forge': '>=1.4.0'
+  'picomatch@2': '>=2.3.2 <3'
+  'picomatch@3': '>=3.0.2 <4'
+  'picomatch@4': '>=4.0.4'
+  'semver@5': '>=7.7.4'
+  'semver@6': '>=7.7.4'
+  'tar': '>=7.5.13'
+  'undici': '>=6.24.1 <7'
+  'ws@8': '>=8.20.1'
+  'yaml@1': '>=1.10.3 <2'
+  'yaml@2': '>=2.8.3 <3'
