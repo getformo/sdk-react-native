@@ -5,33 +5,39 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@babel/plugin-transform-modules-systemjs': '>=7.29.4'
+  '@react-native-community/cli': '>=17.0.1'
+  '@react-native-community/cli-server-api': '>=17.0.1'
+  '@ungap/structured-clone': '>=1.3.1'
+  '@xmldom/xmldom': '>=0.9.10'
+  brace-expansion@1: '>=1.1.13 <2'
+  brace-expansion@2: '>=2.0.3 <3'
+  brace-expansion@5: '>=5.0.6 <6'
   fast-xml-parser: '>=4.5.5'
-  node-forge: '>=1.4.0'
-  undici: '>=6.24.1 <7'
-  tar: '>=7.5.13'
   minimatch@3: '>=3.1.5 <4'
   minimatch@5: '>=5.1.9 <6'
   minimatch@9: '>=9.0.9 <10'
   minimatch@10: '>=10.2.4'
+  node-forge: '>=1.4.0'
   picomatch@2: '>=2.3.2 <3'
   picomatch@3: '>=3.0.2 <4'
   picomatch@4: '>=4.0.4'
-  yaml@2: '>=2.8.3 <3'
-  brace-expansion@1: '>=1.1.13 <2'
-  brace-expansion@2: '>=2.0.3 <3'
+  postcss: '>=8.5.10'
   semver@5: '>=7.7.4'
   semver@6: '>=7.7.4'
-  '@xmldom/xmldom': '>=0.8.12'
+  tar: '>=7.5.13'
+  undici: '>=6.24.1 <7'
+  uuid: '>=11.0.0'
+  ws@8: '>=8.20.1'
   yaml@1: '>=1.10.3 <2'
-  '@react-native-community/cli': '>=17.0.1'
-  '@react-native-community/cli-server-api': '>=17.0.1'
+  yaml@2: '>=2.8.3 <3'
 
 importers:
 
   .:
     dependencies:
       '@react-native-community/netinfo':
-        specifier: ^11.5.1
+        specifier: 11.5.1
         version: 11.5.1(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1)
       '@tanstack/react-query':
         specifier: '>=5.0.0'
@@ -582,8 +588,8 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
-  '@babel/plugin-transform-modules-systemjs@7.29.0':
-    resolution: {integrity: sha512-PrujnVFbOdUpw4UHiVwKvKRLMMic8+eC0CuNlxjsyZUiBjhFdPsewdXCkveh2KqBA9/waD0W1b4hXSOBQJezpQ==}
+  '@babel/plugin-transform-modules-systemjs@7.29.4':
+    resolution: {integrity: sha512-N7QmZ0xRZfjHOfZeQLJjwgX2zS9pdGHSVl/cjSGlo4dXMqvurfxXDMKY4RqEKzPozV78VMcd0lxyG13mlbKc4w==}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
@@ -1380,8 +1386,8 @@ packages:
     resolution: {integrity: sha512-zhahknjobV2FiD6Ee9iLbS7OV9zi10rG26odsQdfBO/hjSzUQbkIYgda+iNKK1zNiW2ey+Lf8MU5btN17V3dUw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@ungap/structured-clone@1.3.0':
-    resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+  '@ungap/structured-clone@1.3.1':
+    resolution: {integrity: sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ==}
 
   '@urql/core@5.2.0':
     resolution: {integrity: sha512-/n0ieD0mvvDnVAXEQgX/7qJiVcvYvNkOHeBvkwtylfjydar123caCXcl58PXFY11oU1oquJocVXHxLAbtv4x1A==}
@@ -1440,8 +1446,8 @@ packages:
       typescript:
         optional: true
 
-  '@xmldom/xmldom@0.9.9':
-    resolution: {integrity: sha512-qycIHAucxy/LXAYIjmLmtQ8q9GPnMbnjG1KXhWm9o5sCr6pOYDATkMPiTNa6/v8eELyqOQ2FsEqeoFYmgv/gJg==}
+  '@xmldom/xmldom@0.9.10':
+    resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
 
   abitype@1.2.3:
@@ -1652,8 +1658,8 @@ packages:
   brace-expansion@2.0.3:
     resolution: {integrity: sha512-MCV/fYJEbqx68aE58kv2cA/kiky1G8vux3OR6/jbS+jIMe/6fJWa0DTzJU7dqijOWYwHi1t29FlfYI9uytqlpA==}
 
-  brace-expansion@5.0.5:
-    resolution: {integrity: sha512-VZznLgtwhn+Mact9tfiwx64fA9erHH/MCXEUfB/0bX/6Fz6ny5EGTXYltMocqg4xFAQZtnO3DHWWXi8RiuN7cQ==}
+  brace-expansion@5.0.6:
+    resolution: {integrity: sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g==}
     engines: {node: 18 || 20 || >=22}
 
   braces@3.0.3:
@@ -2494,7 +2500,7 @@ packages:
   isows@1.0.7:
     resolution: {integrity: sha512-I1fSfDCZL5P0v33sVqeTDSpcstAg/N+wF5HS033mogOVIp4B+oHC7oOCsA3axAbBSGTJ8QubbNmnIRN/h8U7hg==}
     peerDependencies:
-      ws: '*'
+      ws: '>=8.20.1'
 
   istanbul-lib-coverage@3.2.2:
     resolution: {integrity: sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg==}
@@ -3291,8 +3297,8 @@ packages:
     resolution: {integrity: sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==}
     engines: {node: '>=4.0.0'}
 
-  postcss@8.4.49:
-    resolution: {integrity: sha512-OCVPnIObs4N29kxTjzLfUryOkvZEq+pf8jTF0lg8E7uETuWHA+v7j3c/xJmiqpX450191LlmZfUKkXxkTry7nA==}
+  postcss@8.5.14:
+    resolution: {integrity: sha512-SoSL4+OSEtR99LHFZQiJLkT59C5B1amGO1NzTwj7TT1qCUgUO6hxOvzkOYxD+vMrXBM3XJIKzokoERdqQq/Zmg==}
     engines: {node: ^10 || ^12 || >=14}
 
   prelude-ls@1.2.1:
@@ -3810,8 +3816,8 @@ packages:
     resolution: {integrity: sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==}
     engines: {node: '>= 0.4.0'}
 
-  uuid@7.0.3:
-    resolution: {integrity: sha512-DPSke0pXhTZgoF/d+WSt2QaKMCFSfx7QegxEWT+JOuHF5aWrKEn0G+ztjuJg/gG8/ItK+rbPCD/yNv8yyih6Cg==}
+  uuid@14.0.0:
+    resolution: {integrity: sha512-Qo+uWgilfSmAhXCMav1uYFynlQO7fMFiMVZsQqZRMIXp0O7rR7qjkj+cPvBHLgBqi960QCoo/PH2/6ZtVqKvrg==}
     hasBin: true
 
   v8-to-istanbul@9.3.0:
@@ -3915,8 +3921,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.18.3:
-    resolution: {integrity: sha512-PEIGCY5tSlUt50cqyMXfCzX+oOPqN0vuGqWzbcJ2xvnkzkq46oOpz7dQaTDBdfICb4N14+GARUDw2XV2N4tvzg==}
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -4533,7 +4539,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/plugin-transform-modules-systemjs@7.29.0(@babel/core@7.28.6)':
+  '@babel/plugin-transform-modules-systemjs@7.29.4(@babel/core@7.28.6)':
     dependencies:
       '@babel/core': 7.28.6
       '@babel/helper-module-transforms': 7.28.6(@babel/core@7.28.6)
@@ -4801,7 +4807,7 @@ snapshots:
       '@babel/plugin-transform-member-expression-literals': 7.27.1(@babel/core@7.28.6)
       '@babel/plugin-transform-modules-amd': 7.27.1(@babel/core@7.28.6)
       '@babel/plugin-transform-modules-commonjs': 7.28.6(@babel/core@7.28.6)
-      '@babel/plugin-transform-modules-systemjs': 7.29.0(@babel/core@7.28.6)
+      '@babel/plugin-transform-modules-systemjs': 7.29.4(@babel/core@7.28.6)
       '@babel/plugin-transform-modules-umd': 7.27.1(@babel/core@7.28.6)
       '@babel/plugin-transform-named-capturing-groups-regex': 7.29.0(@babel/core@7.28.6)
       '@babel/plugin-transform-new-target': 7.27.1(@babel/core@7.28.6)
@@ -5021,7 +5027,7 @@ snapshots:
       terminal-link: 2.1.1
       undici: 6.24.1
       wrap-ansi: 7.0.0
-      ws: 8.18.3
+      ws: 8.20.1
     optionalDependencies:
       react-native: 0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1)
     transitivePeerDependencies:
@@ -5152,7 +5158,7 @@ snapshots:
       jsc-safe-url: 0.2.4
       lightningcss: 1.31.1
       minimatch: 9.0.9
-      postcss: 8.4.49
+      postcss: 8.5.14
       resolve-from: 5.0.0
     optionalDependencies:
       expo: 54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1)
@@ -5198,7 +5204,7 @@ snapshots:
 
   '@expo/plist@0.4.8':
     dependencies:
-      '@xmldom/xmldom': 0.9.9
+      '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
@@ -5914,7 +5920,7 @@ snapshots:
       '@typescript-eslint/types': 8.57.2
       eslint-visitor-keys: 5.0.1
 
-  '@ungap/structured-clone@1.3.0': {}
+  '@ungap/structured-clone@1.3.1': {}
 
   '@urql/core@5.2.0':
     dependencies:
@@ -5951,7 +5957,7 @@ snapshots:
       - react
       - use-sync-external-store
 
-  '@xmldom/xmldom@0.9.9': {}
+  '@xmldom/xmldom@0.9.10': {}
 
   abitype@1.2.3(typescript@5.9.3):
     optionalDependencies:
@@ -6205,7 +6211,7 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
 
-  brace-expansion@5.0.5:
+  brace-expansion@5.0.6:
     dependencies:
       balanced-match: 4.0.4
 
@@ -6697,7 +6703,7 @@ snapshots:
       '@expo/metro': 54.2.0
       '@expo/metro-config': 54.0.14(expo@54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))
       '@expo/vector-icons': 15.0.3(expo-font@14.0.11(expo@54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1)
-      '@ungap/structured-clone': 1.3.0
+      '@ungap/structured-clone': 1.3.1
       babel-preset-expo: 54.0.10(@babel/core@7.28.6)(@babel/runtime@7.28.6)(expo@54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))(react-refresh@0.14.2)
       expo-asset: 12.0.12(expo@54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1)
       expo-constants: 18.0.13(expo@54.0.33(@babel/core@7.28.6)(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))(react@18.3.1))(react-native@0.77.3(@babel/core@7.28.6)(@babel/preset-env@7.29.0(@babel/core@7.28.6))(@types/react@18.3.27)(react@18.3.1))
@@ -7037,9 +7043,9 @@ snapshots:
 
   isobject@3.0.1: {}
 
-  isows@1.0.7(ws@8.18.3):
+  isows@1.0.7(ws@8.20.1):
     dependencies:
-      ws: 8.18.3
+      ws: 8.20.1
 
   istanbul-lib-coverage@3.2.2: {}
 
@@ -7955,7 +7961,7 @@ snapshots:
 
   minimatch@10.2.4:
     dependencies:
-      brace-expansion: 5.0.5
+      brace-expansion: 5.0.6
 
   minimatch@3.1.5:
     dependencies:
@@ -8189,13 +8195,13 @@ snapshots:
 
   plist@3.1.0:
     dependencies:
-      '@xmldom/xmldom': 0.9.9
+      '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
   pngjs@3.4.0: {}
 
-  postcss@8.4.49:
+  postcss@8.5.14:
     dependencies:
       nanoid: 3.3.11
       picocolors: 1.1.1
@@ -8727,7 +8733,7 @@ snapshots:
 
   utils-merge@1.0.1: {}
 
-  uuid@7.0.3: {}
+  uuid@14.0.0: {}
 
   v8-to-istanbul@9.3.0:
     dependencies:
@@ -8746,9 +8752,9 @@ snapshots:
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@5.9.3)
-      isows: 1.0.7(ws@8.18.3)
+      isows: 1.0.7(ws@8.20.1)
       ox: 0.11.3(typescript@5.9.3)
-      ws: 8.18.3
+      ws: 8.20.1
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -8832,12 +8838,12 @@ snapshots:
 
   ws@7.5.10: {}
 
-  ws@8.18.3: {}
+  ws@8.20.1: {}
 
   xcode@3.0.1:
     dependencies:
       simple-plist: 1.3.1
-      uuid: 7.0.3
+      uuid: 14.0.0
 
   xml2js@0.6.0:
     dependencies:
