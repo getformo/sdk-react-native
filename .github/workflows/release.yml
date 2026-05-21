@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0  # Fetch all history for changelog generation
+          persist-credentials: false
 
       - name: Verify tag is on main branch
         env:
@@ -40,8 +41,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: "22.14.0"
-          cache: 'pnpm'
           # No registry-url - using OIDC trusted publishing instead
+          # No cache - mitigates cache-poisoning risk in publish workflow
 
       - name: Update npm for trusted publishing
         run: npm install -g npm@latest
@@ -111,7 +112,7 @@ jobs:
             echo "Generating changelog from $PREV_TAG to $GITHUB_REF_NAME"
             # Extract commits with PR numbers and format them
             # Use tab as delimiter to safely handle semicolons and special characters
-            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"%s	%h" --no-merges)
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --pretty=format:"%s	%h" --no-merges)
           else
             echo "No previous tag found, using all commits"
             COMMITS=$(git log --pretty=format:"%s	%h" --no-merges)
