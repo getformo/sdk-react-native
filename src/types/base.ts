@@ -178,9 +178,10 @@ export interface AttributionOptions {
   deeplinks?: boolean;
 
   /**
-   * Capture install-time attribution from the platform on first launch:
-   * - Android: Google Play Install Referrer API (requires react-native-play-install-referrer)
-   * - iOS: AdServices attribution token (requires react-native-ad-services-attribution)
+   * Capture install-time attribution on first launch:
+   * - Android: Google Play Install Referrer API (requires react-native-play-install-referrer).
+   *   Enables web-to-mobile attribution, e.g. referrer=example.com.
+   * - iOS: not supported — Apple exposes no install-referrer API, so this is a no-op.
    *
    * Resolved once on first successful fetch and cached; subsequent launches
    * skip the native call. Silently no-ops when the optional native module

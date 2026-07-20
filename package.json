@@ -63,6 +63,7 @@
     "react": ">=18.0.0",
     "react-native": ">=0.70.0",
     "react-native-device-info": ">=10.0.0",
+    "react-native-play-install-referrer": ">=1.1.8",
     "wagmi": ">=2.0.0"
   },
   "peerDependenciesMeta": {
@@ -79,6 +80,9 @@
       "optional": true
     },
     "react-native-device-info": {
+      "optional": true
+    },
+    "react-native-play-install-referrer": {
       "optional": true
     },
     "wagmi": {

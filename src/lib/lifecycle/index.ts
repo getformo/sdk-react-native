@@ -17,6 +17,7 @@ import {
   LOCAL_APP_VERSION_KEY,
   LOCAL_APP_BUILD_KEY,
 } from "../../constants/storage";
+import { getStoredTrafficSource } from "../../utils/trafficSource";
 
 /** Interface for the analytics instance to avoid circular deps */
 interface IAnalyticsInstance {
@@ -141,11 +142,19 @@ export class AppLifecycleManager {
     const { version, build } = this.appVersionInfo;
 
     if (previousVersion === null && previousBuild === null) {
-      // No stored version — first install
+      // No stored version — first install. Attach the captured web-to-mobile
+      // attribution (Android Play Install Referrer / deep link) so the install
+      // event reports where the user came from, e.g. referrer=example.com.
+      // Only non-empty fields are included to keep properties clean.
+      const trafficSource = getStoredTrafficSource() ?? {};
+      const attribution = Object.fromEntries(
+        Object.entries(trafficSource).filter(([, value]) => Boolean(value))
+      );
       logger.info("AppLifecycleManager: Application Installed");
       await this.analytics.track("Application Installed", {
         version,
         build,
+        ...attribution,
       });
     } else if (previousVersion !== version || previousBuild !== build) {
       // Version or build changed — update

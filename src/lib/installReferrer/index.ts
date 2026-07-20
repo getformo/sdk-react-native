@@ -1,28 +1,31 @@
 /**
- * Install Referrer / attribution capture
+ * Install Referrer / attribution capture (Android)
  *
  * Populates the existing traffic source fields (utm_source, utm_medium,
- * utm_campaign, utm_term, utm_content, ref, referrer) from platform install
- * attribution APIs on first launch:
+ * utm_campaign, utm_term, utm_content, ref, referrer) from the Google Play
+ * Install Referrer on first launch. This is what enables web-to-mobile
+ * attribution: a user who tapped a link on example.com before installing shows
+ * up with that referrer on their first events (see P-2207).
  *
  * - Android: Google Play Install Referrer API via react-native-play-install-referrer
  *   (optional peer dep). Returns a URL-encoded query string like
- *   "utm_source=google&utm_campaign=spring_sale&..." which we parse with
+ *   "utm_source=example.com&utm_campaign=spring_sale&..." which we parse with
  *   parseTrafficSource.
  *
- * - iOS: AdServices attribution via react-native-ad-services-attribution
- *   (optional peer dep). Returns an attribution token which we exchange with
- *   Apple's AdServices endpoint; the response is mapped onto utm_* fields.
+ * - iOS: NOT supported. Apple exposes no install-referrer API, so an install
+ *   cannot be attributed to a referring website from the SDK. Doing so requires
+ *   a third-party attribution service (Branch/AppsFlyer) or fingerprint
+ *   matching — out of scope. On iOS this capture is a no-op.
  *
- * Both native modules are lazy-required and the capture silently no-ops when
- * they are not installed (keeps Expo Go and minimal integrations working).
+ * The native module is lazy-required and capture silently no-ops when it is not
+ * installed (keeps Expo Go and minimal integrations working).
  *
  * Result is merged with mergeTrafficSourceFill so a deep link that arrived
  * via Linking.getInitialURL() takes precedence over install-referrer data.
  *
  * The resolution is one-shot: on success we set LOCAL_INSTALL_REFERRER_RESOLVED_KEY
  * so we never call the native API again (Play returns meaningful data only on
- * the first fetch; Apple only within ~24h of install).
+ * the first fetch).
  */
 
 import { Platform } from "react-native";
@@ -35,7 +38,7 @@ import {
 } from "../../utils/trafficSource";
 import type { ITrafficSource } from "../../types";
 
-// Lazy-load optional native modules. Absence is fine — attribution is best-effort.
+// Lazy-load the optional native module. Absence is fine — attribution is best-effort.
 let PlayInstallReferrer: {
   getInstallReferrerInfo: (
     cb: (info: { installReferrer?: string } | null, error?: unknown) => void
@@ -47,17 +50,6 @@ try {
     .PlayInstallReferrer;
 } catch {
   // Not installed — Android install referrer capture will no-op.
-}
-
-let AdServicesAttribution: {
-  getAttributionToken: () => Promise<string | null>;
-} | null = null;
-
-try {
-  const mod = require("react-native-ad-services-attribution");
-  AdServicesAttribution = mod.default ?? mod;
-} catch {
-  // Not installed — iOS AdServices capture will no-op.
 }
 
 export interface CaptureOptions {
@@ -96,11 +88,12 @@ export async function captureInstallReferrer(
 
     if (Platform.OS === "android") {
       didResolve = await captureAndroidReferrer(options);
-    } else if (Platform.OS === "ios") {
-      didResolve = await captureIOSAttribution();
     } else {
+      // iOS (and any non-Android platform): no OS-level install referrer exists.
+      // Attributing an install to a referring website requires a third-party
+      // attribution SDK (Branch/AppsFlyer) or fingerprint matching. No-op.
       logger.debug(
-        `InstallReferrer: unsupported platform ${Platform.OS}, skipping`
+        `InstallReferrer: no install-referrer source on ${Platform.OS}, skipping`
       );
       return;
     }
@@ -183,80 +176,5 @@ async function captureAndroidReferrer(
 
   mergeTrafficSourceFill(toMerge);
   logger.info("InstallReferrer: captured Android install referrer");
-  return true;
-}
-
-/**
- * iOS: fetch AdServices attribution token and exchange it with Apple for
- * campaign metadata. Map campaignId/adGroupId/keywordId onto utm_* fields.
- * Falls back to no-op if the native module isn't present.
- */
-async function captureIOSAttribution(): Promise<boolean> {
-  if (!AdServicesAttribution) {
-    logger.debug(
-      "InstallReferrer: react-native-ad-services-attribution not installed, skipping iOS capture"
-    );
-    return false;
-  }
-
-  let token: string | null;
-  try {
-    token = await AdServicesAttribution.getAttributionToken();
-  } catch (e) {
-    logger.debug("InstallReferrer: failed to get AdServices token", e);
-    return false;
-  }
-  if (!token) return false;
-
-  let data: Record<string, unknown> | null = null;
-  // Guard against poor-network hangs — this runs fire-and-forget during init.
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch("https://api-adservices.apple.com/api/v1/", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: token,
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      // 4xx are permanent (400 = bad/consumed token, 404 = past Apple's ~24h
-      // attribution window). Mark resolved so we stop retrying. 5xx and
-      // other transient failures return false so we re-attempt next launch.
-      const permanent = response.status >= 400 && response.status < 500;
-      logger.debug(
-        `InstallReferrer: AdServices returned ${response.status}, ${
-          permanent ? "permanent — marking resolved" : "transient — will retry"
-        }`
-      );
-      return permanent;
-    }
-    data = (await response.json()) as Record<string, unknown>;
-  } catch (e) {
-    // Network / abort / parse errors — treat as transient.
-    logger.debug("InstallReferrer: AdServices exchange failed", e);
-    return false;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!data || data.attribution === false) {
-    // Organic install
-    return true;
-  }
-
-  const toStr = (v: unknown): string | undefined =>
-    v === undefined || v === null ? undefined : String(v);
-
-  const attributed: Partial<ITrafficSource> = {
-    utm_source: "apple_search_ads",
-    utm_medium: "cpc",
-    ...(toStr(data.campaignId) && { utm_campaign: toStr(data.campaignId)! }),
-    ...(toStr(data.adGroupId) && { utm_content: toStr(data.adGroupId)! }),
-    ...(toStr(data.keywordId) && { utm_term: toStr(data.keywordId)! }),
-  };
-
-  mergeTrafficSourceFill(attributed);
-  logger.info("InstallReferrer: captured iOS AdServices attribution");
   return true;
 }

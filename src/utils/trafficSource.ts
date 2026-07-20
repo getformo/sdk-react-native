@@ -197,7 +197,7 @@ export function updateStoredTrafficSource(
 /**
  * Merge a partial traffic source into the stored one, only filling in fields
  * that are currently empty. Used by the Install Referrer flow so campaign data
- * from the Play Store / Apple AdServices cannot clobber a deep-link attribution
+ * from the Play Store install referrer cannot clobber a deep-link attribution
  * that arrived earlier in the same cold start.
  */
 export function mergeTrafficSourceFill(

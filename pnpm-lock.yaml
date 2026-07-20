@@ -50,6 +50,9 @@ importers:
       ethereum-cryptography:
         specifier: 3.2.0
         version: 3.2.0
+      react-native-play-install-referrer:
+        specifier: '>=1.1.8'
+        version: 1.1.9
       wagmi:
         specifier: '>=2.0.0'
         version: 3.7.1(@tanstack/query-core@5.101.2)(@tanstack/react-query@5.101.2(react@18.3.1))(@types/react@18.3.31)(react@18.3.1)(typescript@5.9.3)(viem@2.55.1(typescript@5.9.3)(zod@3.25.76))
@@ -3437,6 +3440,9 @@ packages:
     resolution: {integrity: sha512-lXFpe6DJmzbQXNLWxlMHP2xuTU5gwrKAvI8dCAZuERhW9eOXSubOQIesk9lIBnsi9pI19GMrcpJEvs4ARPRYmw==}
     peerDependencies:
       react-native: '*'
+
+  react-native-play-install-referrer@1.1.9:
+    resolution: {integrity: sha512-COKQA/eS2I9NigxZDVZuLFzGNLBXF4+o3o9EIgULx+aagjVQexlPBh4g9fdnhiSvZk1rzq/asVwIJKRPc9Cy7A==}
 
   react-native@0.77.3:
     resolution: {integrity: sha512-fIYZ9+zX+iGcb/xGZA6oN3Uq9x46PdqVYtlyG+WmOIFQPVXgryaS9FJLdTvoTpsEA2JXGSGgNOdm640IdAW3cA==}
@@ -8364,6 +8370,8 @@ snapshots:
   react-native-device-info@14.1.1(react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1)):
     dependencies:
       react-native: 0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1)
+
+  react-native-play-install-referrer@1.1.9: {}
 
   react-native@0.77.3(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1):
     dependencies:
