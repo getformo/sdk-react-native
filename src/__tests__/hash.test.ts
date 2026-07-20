@@ -84,7 +84,7 @@ describe('hash utilities', () => {
     // no-Web-Crypto fallback to confirm it still yields valid, unique UUIDs
     // without crashing (and without Math.random).
     describe('fallback when Web Crypto is unavailable', () => {
-      const realCrypto = globalThis.crypto;
+      const realCrypto = (globalThis as { crypto?: unknown }).crypto;
       beforeEach(() => {
         Object.defineProperty(globalThis, 'crypto', {
           value: undefined,
