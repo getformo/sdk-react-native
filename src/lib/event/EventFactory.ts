@@ -479,18 +479,16 @@ class EventFactory implements IEventFactory {
   ): Promise<IFormoEvent> {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
-    // Map screen name to page-equivalent context fields for Tinybird compatibility.
-    // The screen name goes in the URL PATH under a stable per-app host, so the
-    // pipeline derives a stable `origin` (domainWithoutWWW(page_url)) per app and
-    // a real `page_path` (path(page_url)) per screen. Using `app://${name}` instead
-    // would put the name in the HOST — making every screen its own origin (which
-    // fragments mobile sessions) and leaving page_path empty.
+    // Map screen name to page-equivalent context fields so mobile screens flow
+    // through the same analytics as web page views. The screen name is emitted
+    // as-is in the app:// URL; the ingestion pipeline derives `origin` (from the
+    // app identifier in context — app_name / app_bundle_id) and `page_path` (by
+    // stripping the app:// scheme), so the SDK deliberately does NOT encode a
+    // host here (see backend mobile page-event handling, P-2070).
     // User-supplied context values take precedence (spread last).
-    const appHost = this.options?.app?.bundleId || "app";
-    const screenPath = name.startsWith("/") ? name : `/${name}`;
     const screenContext: IFormoEventContext = {
       page_title: name,
-      page_url: `app://${appHost}${screenPath}`,
+      page_url: `app://${name}`,
       ...(context ?? {}),
     };
 
