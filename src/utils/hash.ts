@@ -53,9 +53,16 @@ export function generateUUID(): string {
     return formatUuidV4(webCrypto.getRandomValues(new Uint8Array(16)));
   }
 
-  // No Web Crypto available: derive a unique, UUID-shaped id from a monotonic
-  // counter + timestamp. Not cryptographically random, but collision-free within
-  // a process and only reached on runtimes without a secure RNG.
+  // No Web Crypto available: derive a UUID from a monotonic counter + timestamp
+  // + Math.random, hashed with SHA-256. Math.random is not cryptographically
+  // secure — CodeQL flags it, and that alert is intentionally dismissed: these
+  // are analytics identifiers, not security tokens, and this branch is only
+  // reached on runtimes without a Web Crypto polyfill. The Math.random term
+  // restores the cross-process entropy needed so two fresh app processes that
+  // make their first call within the same millisecond do not collide (the
+  // counter alone only prevents collisions within a single process).
   uuidFallbackCounter = (uuidFallbackCounter + 1) >>> 0;
-  return formatUuidV4(sha256(utf8ToBytes(`${Date.now()}-${uuidFallbackCounter}`)));
+  return formatUuidV4(
+    sha256(utf8ToBytes(`${Date.now()}-${uuidFallbackCounter}-${Math.random()}`))
+  );
 }
