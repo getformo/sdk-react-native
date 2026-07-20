@@ -5,6 +5,10 @@ export const STORAGE_PREFIX = "formo_rn_";
 export const LOCAL_ANONYMOUS_ID_KEY = "anonymous_id";
 export const LOCAL_APP_VERSION_KEY = "app_version";
 export const LOCAL_APP_BUILD_KEY = "app_build";
+// Session identifier + last-activity marker. Persisted so a session survives an
+// app restart, but expires after SESSION_TIMEOUT_MS of inactivity (see EventFactory).
+export const LOCAL_SESSION_ID_KEY = "session_id";
+export const LOCAL_SESSION_LAST_ACTIVITY_KEY = "session_last_activity";
 // One-shot flag: set once the Install Referrer (Android) or AdServices (iOS)
 // attribution has been fetched, so we never call the native API again.
 export const LOCAL_INSTALL_REFERRER_RESOLVED_KEY = "install_referrer_resolved";
