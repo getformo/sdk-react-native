@@ -74,6 +74,32 @@ describe('AppLifecycleManager', () => {
       });
     });
 
+    it('should attach captured web-to-mobile attribution to Application Installed', async () => {
+      // Simulate a stored traffic source (e.g. from the Android Play Install
+      // Referrer) present when the install event fires. Empty fields must be
+      // filtered out; referrer/utm_source must appear on the event.
+      mockStorageInstance.get.mockImplementation((key: string) =>
+        key === 'traffic_source'
+          ? JSON.stringify({
+              referrer: 'example.com',
+              utm_source: 'example.com',
+              utm_campaign: 'spring',
+              utm_medium: '',
+            })
+          : null
+      );
+
+      await manager.start({ version: '1.0.0', build: '1' });
+
+      expect(mockAnalytics.track).toHaveBeenCalledWith('Application Installed', {
+        version: '1.0.0',
+        build: '1',
+        referrer: 'example.com',
+        utm_source: 'example.com',
+        utm_campaign: 'spring',
+      });
+    });
+
     it('should fire Application Opened after install', async () => {
       mockStorageInstance.get.mockReturnValue(null);
 

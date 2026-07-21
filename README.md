@@ -14,6 +14,31 @@ pnpm add @formo/analytics-react-native @react-native-async-storage/async-storage
 cd ios && pod install
 ```
 
+### Android Setup (web-to-mobile attribution)
+
+To attribute installs to where the user came from (e.g. a link on `example.com`
+→ Play Store → install), install the Play Install Referrer module and rebuild
+the native app:
+
+```bash
+pnpm add react-native-play-install-referrer
+cd android && ./gradlew clean && cd ..   # then rebuild, e.g. npx expo run:android
+```
+
+This is an **optional** peer dependency. Without it the SDK still works, but
+Android install attribution is skipped (the SDK logs a warning on startup) and
+`Application Installed` events will not carry `referrer` / `utm_*`.
+
+Point your marketing links at the Play Store with a `referrer` parameter, e.g.:
+
+```
+https://play.google.com/store/apps/details?id=<your.package>&referrer=utm_source%3Dexample.com%26utm_campaign%3Dspring
+```
+
+<sub>iOS note: Apple exposes no install-referrer API, so web-to-mobile install
+attribution is not possible on iOS from the SDK. It requires a third-party
+attribution service (Branch/AppsFlyer).</sub>
+
 ## Quick Start
 
 ### 1. Wrap your app with the provider

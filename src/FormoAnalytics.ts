@@ -134,14 +134,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     const analytics = new FormoAnalytics(writeKey, options);
 
     // Capture attribution BEFORE lifecycle tracking so the first
-    // Application Installed/Opened events carry utm_*/ref/referrer context.
+    // Application Installed/Opened events carry utm_*/ref/referrer.
     //
-    // Deep-link initial URL is awaited because Linking.getInitialURL() is a
-    // fast native bridge call and we need its result before lifecycle events
-    // fire. The url-event subscription is set up synchronously for runtime
-    // deep links. Install-referrer capture (Play / AdServices) is fire-and-
-    // forget since it involves potentially-slow network I/O on iOS and is
-    // best-effort; it'll still populate attribution for subsequent events.
+    // Both are awaited so the stored traffic source is populated before
+    // lifecycle fires — that's what lets Application Installed report the
+    // web-to-mobile referrer (e.g. referrer=example.com). Deep-link initial URL
+    // is a fast native bridge call; the Android Play Install Referrer is a fast
+    // one-shot native call (and no-ops instantly when the native module or the
+    // platform isn't Android), so awaiting it does not meaningfully delay init.
     if (analytics.isAttributionEnabled("deeplinks")) {
       try {
         await analytics.startDeepLinkCapture();
@@ -151,12 +151,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     }
 
     if (analytics.isAttributionEnabled("installReferrer")) {
-      captureInstallReferrer({
-        customRefParams: analytics.options.referral?.queryParams,
-        pathPattern: analytics.options.referral?.pathPattern,
-      }).catch((error) => {
+      try {
+        await captureInstallReferrer({
+          customRefParams: analytics.options.referral?.queryParams,
+          pathPattern: analytics.options.referral?.pathPattern,
+        });
+      } catch (error) {
         logger.debug("FormoAnalytics: install referrer capture failed", error);
-      });
+      }
     }
 
     // Initialize lifecycle tracking if enabled
