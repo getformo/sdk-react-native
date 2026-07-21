@@ -52,6 +52,15 @@ try {
   // Not installed — Android install referrer capture will no-op.
 }
 
+/**
+ * Upper bound on the Play Install Referrer native call. SDK init awaits this
+ * capture so the referrer is available for the Application Installed event, so
+ * it must never be able to block init indefinitely (a stalled Play Store
+ * service connection can leave the callback pending forever). The call is
+ * normally sub-second; on timeout we skip and retry on the next launch.
+ */
+const INSTALL_REFERRER_TIMEOUT_MS = 3000;
+
 export interface CaptureOptions {
   customRefParams?: string[];
   pathPattern?: string;
@@ -115,8 +124,13 @@ async function captureAndroidReferrer(
   options: CaptureOptions
 ): Promise<boolean> {
   if (!PlayInstallReferrer) {
-    logger.debug(
-      "InstallReferrer: react-native-play-install-referrer not installed, skipping Android capture"
+    // Warn (not debug) on Android: attribution silently does nothing here, and
+    // marking the peer optional suppresses the missing-peer install warning, so
+    // this is the only actionable signal the integrator gets.
+    logger.warn(
+      "InstallReferrer: react-native-play-install-referrer is not installed — " +
+        "Android install attribution is disabled. Install it and rebuild the " +
+        "native app to enable web-to-mobile attribution."
     );
     return false;
   }
@@ -124,22 +138,46 @@ async function captureAndroidReferrer(
   // Distinguish "native API errored" (retry next launch) from "native API
   // succeeded but no referrer data" (organic install — mark resolved so we
   // don't re-call every launch).
+  //
+  // The native callback is bounded by a timeout: a stalled Play Store service
+  // connection would otherwise leave this promise pending forever, and since
+  // init() awaits this, that would hang SDK initialization and leave every
+  // consumer on the no-op context. On timeout we resolve as "errored" so the
+  // capture is retried on the next launch.
   const result = await new Promise<{
     ok: boolean;
     info: { installReferrer?: string } | null;
   }>((resolve) => {
+    let settled = false;
+    const finish = (value: {
+      ok: boolean;
+      info: { installReferrer?: string } | null;
+    }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    const timer = setTimeout(() => {
+      logger.debug(
+        `InstallReferrer: Play API did not respond within ${INSTALL_REFERRER_TIMEOUT_MS}ms, continuing`
+      );
+      finish({ ok: false, info: null });
+    }, INSTALL_REFERRER_TIMEOUT_MS);
+
     try {
       PlayInstallReferrer!.getInstallReferrerInfo((info, error) => {
         if (error) {
           logger.debug("InstallReferrer: Play API error", error);
-          resolve({ ok: false, info: null });
+          finish({ ok: false, info: null });
           return;
         }
-        resolve({ ok: true, info: info ?? null });
+        finish({ ok: true, info: info ?? null });
       });
     } catch (e) {
       logger.debug("InstallReferrer: Play API threw", e);
-      resolve({ ok: false, info: null });
+      finish({ ok: false, info: null });
     }
   });
 
