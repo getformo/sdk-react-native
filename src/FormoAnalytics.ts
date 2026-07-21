@@ -8,6 +8,8 @@ import {
   EVENTS_API_HOST,
   EventType,
   LOCAL_ANONYMOUS_ID_KEY,
+  LOCAL_SESSION_ID_KEY,
+  LOCAL_SESSION_LAST_ACTIVITY_KEY,
   SESSION_USER_ID_KEY,
   CONSENT_OPT_OUT_KEY,
   TEventType,
@@ -258,6 +260,8 @@ export class FormoAnalytics implements IFormoAnalytics {
   public reset(): void {
     this.currentUserId = undefined;
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
+    storage().remove(LOCAL_SESSION_ID_KEY);
+    storage().remove(LOCAL_SESSION_LAST_ACTIVITY_KEY);
     storage().remove(SESSION_USER_ID_KEY);
     this.session.clear();
   }
