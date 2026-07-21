@@ -72,13 +72,13 @@ describe("captureInstallReferrer — hung native call", () => {
     const promise = captureInstallReferrer();
     // Advance past the bound; if the timeout were missing this would never settle
     // and the test would time out.
-    jest.advanceTimersByTime(3001);
+    jest.advanceTimersByTime(1501);
     await expect(promise).resolves.toBeUndefined();
   });
 
   it("does not mark attribution resolved on timeout, so it retries next launch", async () => {
     const promise = captureInstallReferrer();
-    jest.advanceTimersByTime(3001);
+    jest.advanceTimersByTime(1501);
     await promise;
 
     // The one-shot flag must NOT be persisted — a timeout is transient.

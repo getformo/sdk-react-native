@@ -53,13 +53,20 @@ try {
 }
 
 /**
- * Upper bound on the Play Install Referrer native call. SDK init awaits this
- * capture so the referrer is available for the Application Installed event, so
- * it must never be able to block init indefinitely (a stalled Play Store
- * service connection can leave the callback pending forever). The call is
- * normally sub-second; on timeout we skip and retry on the next launch.
+ * Upper bound on the Play Install Referrer native call.
+ *
+ * SDK init awaits this capture so the referrer is available for the
+ * Application Installed event, which means it must never block init
+ * indefinitely (a stalled Play Store service connection can leave the callback
+ * pending forever). Until init resolves the provider serves its no-op context,
+ * so any delay here is a window where startup events are dropped.
+ *
+ * That cost is paid on the FIRST launch only: the capture is one-shot, and
+ * every later launch short-circuits on LOCAL_INSTALL_REFERRER_RESOLVED_KEY
+ * before reaching the native call. The bind is normally sub-second, so this is
+ * kept tight rather than generous — on timeout we skip and retry next launch.
  */
-const INSTALL_REFERRER_TIMEOUT_MS = 3000;
+const INSTALL_REFERRER_TIMEOUT_MS = 1500;
 
 export interface CaptureOptions {
   customRefParams?: string[];
