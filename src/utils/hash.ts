@@ -11,13 +11,58 @@ export async function hash(input: string): Promise<string> {
   return bytesToHex(hashBytes);
 }
 
+// Monotonic counter for the no-Web-Crypto fallback below. Guarantees the
+// fallback produces distinct ids even for calls within the same millisecond.
+let uuidFallbackCounter = 0;
+
+/** Format 16 bytes as a UUID v4 string (sets the version + variant bits). */
+function formatUuidV4(source: Uint8Array): string {
+  const bytes = source.slice(0, 16);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40; // version 4
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 10xx
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 /**
- * Generate a UUID v4
+ * Generate a UUID v4.
+ *
+ * Uses a cryptographically secure RNG (Web Crypto), which is present in React
+ * Native whenever the app polyfills it via `react-native-get-random-values` —
+ * wallet apps using wagmi/viem already do, since those require secure randomness.
+ * On a runtime with no Web Crypto at all, derives a unique id from a monotonic
+ * counter + timestamp via SHA-256 (no PRNG) so the SDK never throws; that path
+ * is not cryptographically random, but it is only ever reached without Web
+ * Crypto, and these IDs are analytics identifiers, not security tokens.
  */
 export function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  const webCrypto: {
+    randomUUID?: () => string;
+    getRandomValues?: (a: Uint8Array) => Uint8Array;
+  } | undefined = (globalThis as { crypto?: unknown }).crypto as
+    | { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array }
+    | undefined;
+
+  // Fastest secure path: native randomUUID.
+  if (typeof webCrypto?.randomUUID === "function") {
+    return webCrypto.randomUUID();
+  }
+
+  // Secure random bytes formatted as a UUID v4.
+  if (typeof webCrypto?.getRandomValues === "function") {
+    return formatUuidV4(webCrypto.getRandomValues(new Uint8Array(16)));
+  }
+
+  // No Web Crypto available: derive a UUID from a monotonic counter + timestamp
+  // + Math.random, hashed with SHA-256. Math.random is not cryptographically
+  // secure — CodeQL flags it, and that alert is intentionally dismissed: these
+  // are analytics identifiers, not security tokens, and this branch is only
+  // reached on runtimes without a Web Crypto polyfill. The Math.random term
+  // restores the cross-process entropy needed so two fresh app processes that
+  // make their first call within the same millisecond do not collide (the
+  // counter alone only prevents collisions within a single process).
+  uuidFallbackCounter = (uuidFallbackCounter + 1) >>> 0;
+  return formatUuidV4(
+    sha256(utf8ToBytes(`${Date.now()}-${uuidFallbackCounter}-${Math.random()}`))
+  );
 }

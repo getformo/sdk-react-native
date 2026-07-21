@@ -168,6 +168,20 @@ export class EventQueue implements IEventQueue {
       `Event enqueued: ${getActionDescriptor(event.type, event.properties)}`
     );
 
+    // Per-event detail line for debugging (only prints when debug logging is on).
+    const ctx = (event.context ?? {}) as Record<string, unknown>;
+    logger.debug(
+      "Event detail:",
+      JSON.stringify({
+        type: event.type,
+        event: event.event,
+        session_id: event.session_id,
+        anonymous_id: event.anonymous_id,
+        user_agent: ctx.user_agent,
+        page_url: ctx.page_url,
+      })
+    );
+
     const hasReachedFlushAt = this.queue.length >= this.flushAt;
     const hasReachedQueueSize =
       this.queue.reduce(

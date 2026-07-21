@@ -35,7 +35,7 @@ trustPolicyExclude:
 # Dependency overrides
 # Pin transitive deps to patched versions for advisories not yet fixed upstream.
 overrides:
-  '@babel/plugin-transform-modules-systemjs': '>=7.29.4'
+  '@babel/plugin-transform-modules-systemjs': '>=7.29.4 <8'
   '@react-native-community/cli': '>=17.0.1'
   '@react-native-community/cli-server-api': '>=17.0.1'
   '@ungap/structured-clone': '>=1.3.1'
@@ -44,6 +44,7 @@ overrides:
   'brace-expansion@2': '>=2.0.3 <3'
   'brace-expansion@5': '>=5.0.6 <6'
   'fast-xml-parser': '>=4.5.5'
+  'js-yaml@3': '>=3.15.0'
   'minimatch@3': '>=3.1.5 <4'
   'minimatch@5': '>=5.1.9 <6'
   'minimatch@9': '>=9.0.9 <10'
@@ -55,9 +56,27 @@ overrides:
   'postcss': '>=8.5.10'
   'semver@5': '>=7.7.4'
   'semver@6': '>=7.7.4'
+  'shell-quote': '>=1.8.4'
   'tar': '>=7.5.13'
+  'tmp': '>=0.2.6'
   'undici': '>=6.24.1 <7'
   'uuid': '>=11.0.0'
-  'ws@8': '>=8.20.1'
+  'ws@6': '>=6.2.4'
+  'ws@7': '>=7.5.11'
+  'ws@8': '>=8.21.0'
   'yaml@1': '>=1.10.3 <2'
   'yaml@2': '>=2.8.3 <3'
+
+# Audit policy: ignore advisories that only affect react-native's / wagmi's BUILD
+# tooling (never shipped in the SDK's runtime) and that cannot be cleanly patched.
+# The overrides above already bump the fixable instances (shell-quote, tmp, ws@6/7,
+# most ws@8, js-yaml@3); these residuals have no non-breaking fix available:
+#   GHSA-4x5r-pxfx-6jf8  @babel/core (LOW)      no patched version published (>=7.29.1 absent)
+#   GHSA-96hv-2xvq-fx4p  ws (HIGH)              one build-tooling ws@8.20.1 resists the >=8.21.0 override
+#   GHSA-h67p-54hq-rp68  js-yaml (MODERATE)     the only 4.x fix is a breaking major bump (5.x)
+# Revisit as upstream (react-native / metro / viem) updates these transitive deps.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-4x5r-pxfx-6jf8
+    - GHSA-96hv-2xvq-fx4p
+    - GHSA-h67p-54hq-rp68

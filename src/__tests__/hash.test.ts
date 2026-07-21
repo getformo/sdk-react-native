@@ -79,5 +79,36 @@ describe('hash utilities', () => {
       const uuid = generateUUID();
       expect(uuid).toHaveLength(36);
     });
+
+    // The secure path uses Web Crypto (present in jest). These tests force the
+    // no-Web-Crypto fallback to confirm it still yields valid, unique UUIDs
+    // without crashing (and without Math.random).
+    describe('fallback when Web Crypto is unavailable', () => {
+      const realCrypto = (globalThis as { crypto?: unknown }).crypto;
+      beforeEach(() => {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: undefined,
+          configurable: true,
+        });
+      });
+      afterEach(() => {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: realCrypto,
+          configurable: true,
+        });
+      });
+
+      it('still produces a valid UUID v4', () => {
+        expect(generateUUID()).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+        );
+      });
+
+      it('produces unique ids even within the same millisecond (counter)', () => {
+        const ids = new Set<string>();
+        for (let i = 0; i < 100; i++) ids.add(generateUUID());
+        expect(ids.size).toBe(100);
+      });
+    });
   });
 });

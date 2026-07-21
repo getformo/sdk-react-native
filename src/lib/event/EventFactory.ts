@@ -25,7 +25,15 @@ try {
 } catch {
   // Not available
 }
-import { COUNTRY_LIST, LOCAL_ANONYMOUS_ID_KEY, CHANNEL, VERSION } from "../../constants";
+import {
+  COUNTRY_LIST,
+  LOCAL_ANONYMOUS_ID_KEY,
+  LOCAL_SESSION_ID_KEY,
+  LOCAL_SESSION_LAST_ACTIVITY_KEY,
+  SESSION_TIMEOUT_MS,
+  CHANNEL,
+  VERSION,
+} from "../../constants";
 import {
   Address,
   APIEvent,
@@ -63,6 +71,73 @@ function generateAnonymousId(key: string): string {
   const newId = generateUUID();
   storage().set(key, newId);
   return newId;
+}
+
+/**
+ * Get the current session id, or start a new one.
+ *
+ * A session persists across app restarts but expires after SESSION_TIMEOUT_MS of
+ * inactivity, at which point a fresh id is minted. Every call refreshes the
+ * last-activity marker.
+ *
+ * The mobile SDK owns its session_id rather than letting ingestion derive one.
+ * The events-gateway authorizer computes
+ * `hash(dailySalt + domain + sourceIp + userAgent)` — a design built for the
+ * web, where all three inputs carry real entropy. For a native app they all
+ * degenerate at once: there is no Origin header (so `domain` is the constant
+ * "unknown"), the HTTP User-Agent is the client library's (`okhttp/…`,
+ * `CFNetwork/… Darwin/…`) and is near-identical across users on the same app
+ * build, and carrier CGNAT puts many users behind one IP — so unrelated users
+ * collapse into a single session. Ingestion honours a body-provided session_id
+ * (`obj?.session_id || session_id` in handlerV0), which is the path used here.
+ */
+export function getSessionId(): string {
+  const now = Date.now();
+  const existingId = storage().get(LOCAL_SESSION_ID_KEY);
+  const lastActivityRaw = storage().get(LOCAL_SESSION_LAST_ACTIVITY_KEY);
+  const lastActivity = lastActivityRaw ? parseInt(lastActivityRaw, 10) : 0;
+
+  const isExpired =
+    !existingId || !lastActivity || now - lastActivity > SESSION_TIMEOUT_MS;
+  const sessionId = isExpired ? generateUUID() : existingId;
+
+  storage().set(LOCAL_SESSION_ID_KEY, sessionId);
+  storage().set(LOCAL_SESSION_LAST_ACTIVITY_KEY, String(now));
+
+  return sessionId;
+}
+
+/**
+ * Build a representative User-Agent string from structured device info.
+ *
+ * The ingestion pipeline classifies device / os / browser purely from the
+ * user_agent string; a mobile event with an empty UA is bucketed as "unknown".
+ * Platforms without a native UA (e.g. Expo, where DeviceInfo.getUserAgent() is
+ * unavailable) would otherwise report device=os=unknown. We synthesize a UA
+ * containing the tokens the classifier keys off (iphone/ipad/android + version)
+ * so mobile device and OS resolve correctly. Returns "" for unknown platforms.
+ */
+export function synthesizeUserAgent(info: {
+  os_name: string;
+  os_version: string;
+  device_model: string;
+  device_type: string;
+}): string {
+  const os = (info.os_name || "").toLowerCase();
+  const version = info.os_version || "";
+  const model = info.device_model || "";
+  const isTablet = info.device_type === "tablet";
+
+  if (os === "ios" || os === "ipados") {
+    const device = isTablet ? "iPad" : "iPhone";
+    const osVersion = version.replace(/\./g, "_");
+    return `Mozilla/5.0 (${device}; CPU ${device} OS ${osVersion} like Mac OS X) FormoAnalytics/ReactNative`;
+  }
+  if (os === "android") {
+    const formFactor = isTablet ? "Tablet" : "Mobile";
+    return `Mozilla/5.0 (Linux; Android ${version}; ${model}) ${formFactor} FormoAnalytics/ReactNative`;
+  }
+  return "";
 }
 
 /**
@@ -218,14 +293,24 @@ class EventFactory implements IEventFactory {
           DeviceInfo.isTablet(),
         ]);
 
+        const device_type = isTablet ? "tablet" : "mobile";
+        const os_version = DeviceInfo.getSystemVersion();
         return {
           os_name: Platform.OS,
-          os_version: DeviceInfo.getSystemVersion(),
+          os_version,
           device_model: model,
           device_manufacturer: manufacturer,
           device_name: deviceName,
-          device_type: isTablet ? "tablet" : "mobile",
-          user_agent: userAgent,
+          device_type,
+          // Prefer the native UA; fall back to a synthesized one if unavailable.
+          user_agent:
+            userAgent ||
+            synthesizeUserAgent({
+              os_name: Platform.OS,
+              os_version,
+              device_model: model,
+              device_type,
+            }),
           app_name: DeviceInfo.getApplicationName(),
           app_version: DeviceInfo.getVersion(),
           app_build: DeviceInfo.getBuildNumber(),
@@ -240,14 +325,25 @@ class EventFactory implements IEventFactory {
     if (ExpoDevice || ExpoApplication) {
       try {
         const isTablet = ExpoDevice?.deviceType === ExpoDevice?.DeviceType?.TABLET;
+        const os_name = ExpoDevice?.osName || Platform.OS;
+        const os_version = ExpoDevice?.osVersion || String(Platform.Version);
+        const device_model = ExpoDevice?.modelName || "Unknown";
+        const device_type = isTablet ? "tablet" : "mobile";
         return {
-          os_name: ExpoDevice?.osName || Platform.OS,
-          os_version: ExpoDevice?.osVersion || String(Platform.Version),
-          device_model: ExpoDevice?.modelName || "Unknown",
+          os_name,
+          os_version,
+          device_model,
           device_manufacturer: ExpoDevice?.manufacturer || "Unknown",
           device_name: ExpoDevice?.deviceName || "Unknown Device",
-          device_type: isTablet ? "tablet" : "mobile",
-          user_agent: "",
+          device_type,
+          // Expo exposes no native UA; synthesize one so the pipeline can
+          // classify device/os (both are derived from the UA string).
+          user_agent: synthesizeUserAgent({
+            os_name,
+            os_version,
+            device_model,
+            device_type,
+          }),
           app_name: ExpoApplication?.applicationName || "",
           app_version: ExpoApplication?.nativeApplicationVersion || "",
           app_build: ExpoApplication?.nativeBuildVersion || "",
@@ -260,14 +356,21 @@ class EventFactory implements IEventFactory {
 
     // Final fallback - minimal info from Platform
     logger.debug("No device info modules available, using Platform defaults");
+    const os_name = Platform.OS;
+    const os_version = String(Platform.Version);
     return {
-      os_name: Platform.OS,
-      os_version: String(Platform.Version),
+      os_name,
+      os_version,
       device_model: "Unknown",
       device_manufacturer: "Unknown",
       device_name: "Unknown Device",
       device_type: "mobile",
-      user_agent: "",
+      user_agent: synthesizeUserAgent({
+        os_name,
+        os_version,
+        device_model: "Unknown",
+        device_type: "mobile",
+      }),
       app_name: "",
       app_version: "",
       app_build: "",
@@ -334,6 +437,7 @@ class EventFactory implements IEventFactory {
     };
 
     commonEventData.anonymous_id = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
+    commonEventData.session_id = getSessionId();
 
     // Handle address - convert undefined to null for consistency
     // Try EVM first, then Solana fallback (chainId is not always present here).
@@ -383,8 +487,12 @@ class EventFactory implements IEventFactory {
   ): Promise<IFormoEvent> {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
-    // Map screen name to page-equivalent context fields for Tinybird compatibility.
-    // page_path is omitted — Tinybird derives it from page_url via path().
+    // Map screen name to page-equivalent context fields so mobile screens flow
+    // through the same analytics as web page views. The screen name is emitted
+    // as-is in the app:// URL; the ingestion pipeline derives `origin` (from the
+    // app identifier in context — app_name / app_bundle_id) and `page_path` (by
+    // stripping the app:// scheme), so the SDK deliberately does NOT encode a
+    // host here (see backend mobile page-event handling, P-2070).
     // User-supplied context values take precedence (spread last).
     const screenContext: IFormoEventContext = {
       page_title: name,
