@@ -28,9 +28,6 @@ try {
 import {
   COUNTRY_LIST,
   LOCAL_ANONYMOUS_ID_KEY,
-  LOCAL_SESSION_ID_KEY,
-  LOCAL_SESSION_LAST_ACTIVITY_KEY,
-  SESSION_TIMEOUT_MS,
   CHANNEL,
   VERSION,
 } from "../../constants";
@@ -71,32 +68,6 @@ function generateAnonymousId(key: string): string {
   const newId = generateUUID();
   storage().set(key, newId);
   return newId;
-}
-
-/**
- * Get the current session id, or start a new one.
- *
- * A session persists across app restarts but expires after SESSION_TIMEOUT_MS of
- * inactivity, at which point a fresh id is minted. Every call refreshes the
- * last-activity marker. The RN SDK must generate this itself: unlike the web SDK
- * (whose session_id is set server-side from a cookie at the ingestion edge), a
- * mobile app has no cookie, so without this every mobile event would arrive with
- * an empty session_id and collapse into a single session downstream.
- */
-export function getSessionId(): string {
-  const now = Date.now();
-  const existingId = storage().get(LOCAL_SESSION_ID_KEY);
-  const lastActivityRaw = storage().get(LOCAL_SESSION_LAST_ACTIVITY_KEY);
-  const lastActivity = lastActivityRaw ? parseInt(lastActivityRaw, 10) : 0;
-
-  const isExpired =
-    !existingId || !lastActivity || now - lastActivity > SESSION_TIMEOUT_MS;
-  const sessionId = isExpired ? generateUUID() : existingId;
-
-  storage().set(LOCAL_SESSION_ID_KEY, sessionId);
-  storage().set(LOCAL_SESSION_LAST_ACTIVITY_KEY, String(now));
-
-  return sessionId;
 }
 
 /**
@@ -428,8 +399,12 @@ class EventFactory implements IEventFactory {
       version: VERSION,
     };
 
+    // NOTE: session_id is deliberately NOT set here. It is computed server-side
+    // by the events-gateway authorizer as hash(dailySalt + domain + sourceIp +
+    // userAgent) — a privacy-friendly, daily-rotating identifier. A body-provided
+    // session_id would override it (see handlerV0 `obj?.session_id || session_id`),
+    // which is an escape hatch reserved for server-side SDKs.
     commonEventData.anonymous_id = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
-    commonEventData.session_id = getSessionId();
 
     // Handle address - convert undefined to null for consistency
     // Try EVM first, then Solana fallback (chainId is not always present here).
@@ -479,18 +454,16 @@ class EventFactory implements IEventFactory {
   ): Promise<IFormoEvent> {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
-    // Map screen name to page-equivalent context fields for Tinybird compatibility.
-    // The screen name goes in the URL PATH under a stable per-app host, so the
-    // pipeline derives a stable `origin` (domainWithoutWWW(page_url)) per app and
-    // a real `page_path` (path(page_url)) per screen. Using `app://${name}` instead
-    // would put the name in the HOST — making every screen its own origin (which
-    // fragments mobile sessions) and leaving page_path empty.
+    // Map screen name to page-equivalent context fields so mobile screens flow
+    // through the same analytics as web page views. The screen name is emitted
+    // as-is in the app:// URL; the ingestion pipeline derives `origin` (from the
+    // app identifier in context — app_name / app_bundle_id) and `page_path` (by
+    // stripping the app:// scheme), so the SDK deliberately does NOT encode a
+    // host here (see backend mobile page-event handling, P-2070).
     // User-supplied context values take precedence (spread last).
-    const appHost = this.options?.app?.bundleId || "app";
-    const screenPath = name.startsWith("/") ? name : `/${name}`;
     const screenContext: IFormoEventContext = {
       page_title: name,
-      page_url: `app://${appHost}${screenPath}`,
+      page_url: `app://${name}`,
       ...(context ?? {}),
     };
 

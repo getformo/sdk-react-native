@@ -25,6 +25,3 @@ export type TEventChannel = Lowercase<EventChannel>;
 export const CHANNEL: TEventChannel = "mobile";
 export const VERSION = "0";
 
-// Session inactivity timeout (30 min), matching the GA4/Segment default. A new
-// session_id is minted once the gap since the last tracked event exceeds this.
-export const SESSION_TIMEOUT_MS = 30 * 60 * 1000;

@@ -5,7 +5,6 @@ export type AnonymousID = string;
 
 export interface ICommonProperties {
   anonymous_id: AnonymousID;
-  session_id: string;
   user_id: Nullable<string>;
   address: Nullable<string>;
   type: TEventType;
