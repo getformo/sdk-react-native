@@ -28,9 +28,6 @@ try {
 import {
   COUNTRY_LIST,
   LOCAL_ANONYMOUS_ID_KEY,
-  LOCAL_SESSION_ID_KEY,
-  LOCAL_SESSION_LAST_ACTIVITY_KEY,
-  SESSION_TIMEOUT_MS,
   CHANNEL,
   VERSION,
 } from "../../constants";
@@ -71,32 +68,6 @@ function generateAnonymousId(key: string): string {
   const newId = generateUUID();
   storage().set(key, newId);
   return newId;
-}
-
-/**
- * Get the current session id, or start a new one.
- *
- * A session persists across app restarts but expires after SESSION_TIMEOUT_MS of
- * inactivity, at which point a fresh id is minted. Every call refreshes the
- * last-activity marker. The RN SDK must generate this itself: unlike the web SDK
- * (whose session_id is set server-side from a cookie at the ingestion edge), a
- * mobile app has no cookie, so without this every mobile event would arrive with
- * an empty session_id and collapse into a single session downstream.
- */
-export function getSessionId(): string {
-  const now = Date.now();
-  const existingId = storage().get(LOCAL_SESSION_ID_KEY);
-  const lastActivityRaw = storage().get(LOCAL_SESSION_LAST_ACTIVITY_KEY);
-  const lastActivity = lastActivityRaw ? parseInt(lastActivityRaw, 10) : 0;
-
-  const isExpired =
-    !existingId || !lastActivity || now - lastActivity > SESSION_TIMEOUT_MS;
-  const sessionId = isExpired ? generateUUID() : existingId;
-
-  storage().set(LOCAL_SESSION_ID_KEY, sessionId);
-  storage().set(LOCAL_SESSION_LAST_ACTIVITY_KEY, String(now));
-
-  return sessionId;
 }
 
 /**
@@ -428,8 +399,12 @@ class EventFactory implements IEventFactory {
       version: VERSION,
     };
 
+    // NOTE: session_id is deliberately NOT set here. It is computed server-side
+    // by the events-gateway authorizer as hash(dailySalt + domain + sourceIp +
+    // userAgent) — a privacy-friendly, daily-rotating identifier. A body-provided
+    // session_id would override it (see handlerV0 `obj?.session_id || session_id`),
+    // which is an escape hatch reserved for server-side SDKs.
     commonEventData.anonymous_id = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
-    commonEventData.session_id = getSessionId();
 
     // Handle address - convert undefined to null for consistency
     // Try EVM first, then Solana fallback (chainId is not always present here).

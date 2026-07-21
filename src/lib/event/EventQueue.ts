@@ -175,7 +175,6 @@ export class EventQueue implements IEventQueue {
       JSON.stringify({
         type: event.type,
         event: event.event,
-        session_id: event.session_id,
         anonymous_id: event.anonymous_id,
         user_agent: ctx.user_agent,
         page_url: ctx.page_url,
