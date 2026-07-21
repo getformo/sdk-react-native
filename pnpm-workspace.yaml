@@ -6,6 +6,14 @@
 # Use `pnpm approve-builds` to manage this list.
 onlyBuiltDependencies: []
 
+# Every dependency that wants a lifecycle script must get an explicit verdict
+# here; pnpm fails the install until one is recorded.
+# unrs-resolver arrives via jest-resolve. Its postinstall only links a prebuilt
+# napi binary, and pnpm already installs the right platform binding as an
+# optional dep, so the test suite resolves fine with the script denied.
+allowBuilds:
+  unrs-resolver: false
+
 # 2. Block exotic subdependencies
 # Prevents transitive deps from using git repos or direct tarball URLs.
 blockExoticSubdeps: true
