@@ -2,12 +2,10 @@
 # See: https://pnpm.io/supply-chain-security
 
 # 1. Block lifecycle scripts by default
-# Only explicitly approved packages can run postinstall scripts.
+# pnpm runs no dependency's postinstall until it is listed here with an
+# explicit true/false verdict, and fails the install while any are unrecorded.
 # Use `pnpm approve-builds` to manage this list.
-onlyBuiltDependencies: []
-
-# Every dependency that wants a lifecycle script must get an explicit verdict
-# here; pnpm fails the install until one is recorded.
+#
 # unrs-resolver arrives via jest-resolve. Its postinstall only links a prebuilt
 # napi binary, and pnpm already installs the right platform binding as an
 # optional dep, so the test suite resolves fine with the script denied.
