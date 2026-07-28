@@ -94,8 +94,8 @@ importers:
         specifier: ^55.0.15
         version: 55.0.16(expo@57.0.4)
       expo-device:
-        specifier: ^55.0.17
-        version: 55.0.18(expo@57.0.4)
+        specifier: ^57.0.1
+        version: 57.0.1(expo@57.0.4)
       jest:
         specifier: ^30.4.1
         version: 30.4.2(@types/node@26.1.1)
@@ -2214,8 +2214,8 @@ packages:
       expo: '*'
       react-native: '*'
 
-  expo-device@55.0.18:
-    resolution: {integrity: sha512-MEdnb+Si3VICmJzzSVsQyo90LQg8cG5h9to2tcaHFXPX31yOolYJXbHGN5bmR9MjKOgw6d6h7Ow/kMTnSwZrPQ==}
+  expo-device@57.0.1:
+    resolution: {integrity: sha512-jyEMDUticH+dhcL3GHa2aiifOvGXJsmb3oVT2R2q4i8bN7Bddy61+NkpMmuS2VAZrvoLQwf0TJJ/1vi1ukvutA==}
     peerDependencies:
       expo: '*'
 
@@ -6614,7 +6614,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  expo-device@55.0.18(expo@57.0.4):
+  expo-device@57.0.1(expo@57.0.4):
     dependencies:
       expo: 57.0.4(@babel/core@7.29.7)(@expo/dom-webview@57.0.0)(react-native@0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)(typescript@6.0.3)
       ua-parser-js: 0.7.41
