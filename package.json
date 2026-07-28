@@ -116,7 +116,7 @@
     "react": "^19.2.6",
     "react-native": "^0.85.3",
     "react-native-builder-bob": "^0.41.0",
-    "react-native-device-info": "^14.0.0",
+    "react-native-device-info": "^15.0.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.3"
   },

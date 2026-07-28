@@ -109,8 +109,8 @@ importers:
         specifier: ^0.41.0
         version: 0.41.0
       react-native-device-info:
-        specifier: ^14.0.0
-        version: 14.1.1(react-native@0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))
+        specifier: ^15.0.2
+        version: 15.0.2(react-native@0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -3378,8 +3378,8 @@ packages:
     engines: {node: ^20.19.0 || ^22.12.0 || >= 23.4.0}
     hasBin: true
 
-  react-native-device-info@14.1.1:
-    resolution: {integrity: sha512-lXFpe6DJmzbQXNLWxlMHP2xuTU5gwrKAvI8dCAZuERhW9eOXSubOQIesk9lIBnsi9pI19GMrcpJEvs4ARPRYmw==}
+  react-native-device-info@15.0.2:
+    resolution: {integrity: sha512-dd71eXG2l3Cwp66IvKNadMTB8fhU3PEjyVddI97sYan+D4bgIAUmgGDhbSOFvHcGavksb2U17kiQYaDiK2WK2g==}
     peerDependencies:
       react-native: '*'
 
@@ -8025,7 +8025,7 @@ snapshots:
       - babel-plugin-macros
       - supports-color
 
-  react-native-device-info@14.1.1(react-native@0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7)):
+  react-native-device-info@15.0.2(react-native@0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7)):
     dependencies:
       react-native: 0.85.3(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7)
 
