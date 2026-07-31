@@ -291,3 +291,92 @@ describe('AppLifecycleManager', () => {
     });
   });
 });
+
+describe('AppLifecycleManager — Application Foregrounded', () => {
+  let manager: AppLifecycleManager;
+  let mockAnalytics: { track: jest.Mock };
+
+  // Drive the AppState listener the manager registered.
+  const transition = async (to: string) => {
+    const handler = (AppState.addEventListener as jest.Mock).mock.calls.at(-1)![1];
+    handler(to);
+    await Promise.resolve();
+  };
+
+  const startManager = async (trackForegrounded?: boolean) => {
+    mockAnalytics = { track: jest.fn().mockResolvedValue(undefined) };
+    mockStorageInstance.get.mockReturnValue('1.0.0');
+    manager = new AppLifecycleManager(mockAnalytics);
+    await manager.start(
+      { version: '1.0.0', build: '1' },
+      trackForegrounded === undefined ? undefined : { trackForegrounded }
+    );
+    mockAnalytics.track.mockClear();
+  };
+
+  beforeEach(() => {
+    mockStorageInstance.get.mockReturnValue('1.0.0');
+    mockStorageInstance.setAsync.mockResolvedValue(undefined);
+    mockStorageManager.hasPersistentStorage.mockReturnValue(true);
+    (AppState.addEventListener as jest.Mock).mockReturnValue({ remove: jest.fn() });
+    (Linking.getInitialURL as jest.Mock).mockResolvedValue(null);
+  });
+
+  const eventNames = () =>
+    (mockAnalytics.track.mock.calls as unknown[][]).map((call) => call[0]);
+
+  it('is off by default — only Application Opened fires on foreground', async () => {
+    await startManager();
+    await transition('background');
+    await transition('active');
+
+    expect(eventNames()).toEqual([
+      'Application Backgrounded',
+      'Application Opened',
+    ]);
+  });
+
+  it('emits Application Foregrounded alongside Application Opened when enabled', async () => {
+    await startManager(true);
+    await transition('background');
+    await transition('active');
+
+    expect(eventNames()).toEqual([
+      'Application Backgrounded',
+      'Application Opened',
+      'Application Foregrounded',
+    ]);
+    expect(mockAnalytics.track).toHaveBeenLastCalledWith(
+      'Application Foregrounded',
+      { version: '1.0.0', build: '1' }
+    );
+  });
+
+  it('does not fire on the cold start — that is Application Opened with from_background: false', async () => {
+    mockAnalytics = { track: jest.fn().mockResolvedValue(undefined) };
+    mockStorageInstance.get.mockReturnValue('1.0.0');
+    manager = new AppLifecycleManager(mockAnalytics);
+    await manager.start({ version: '1.0.0', build: '1' }, { trackForegrounded: true });
+
+    expect(eventNames()).toEqual(['Application Opened']);
+    expect(mockAnalytics.track).toHaveBeenCalledWith(
+      'Application Opened',
+      expect.objectContaining({ from_background: false })
+    );
+  });
+
+  it('ignores the iOS "inactive" transitional state', async () => {
+    await startManager(true);
+    await transition('background');
+    await transition('inactive');
+    await transition('active');
+
+    // 'inactive' must not reset lastAppState, or the background -> active
+    // transition would be missed entirely.
+    expect(eventNames()).toEqual([
+      'Application Backgrounded',
+      'Application Opened',
+      'Application Foregrounded',
+    ]);
+  });
+});

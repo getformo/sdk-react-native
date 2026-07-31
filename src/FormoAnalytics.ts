@@ -14,6 +14,7 @@ import {
   CONSENT_OPT_OUT_KEY,
   TEventType,
 } from "./constants";
+import { LIFECYCLE_EVENT } from "./constants/events";
 import { initStorageManager, storage, AsyncStorageInterface } from "./lib/storage";
 import { EventManager, EventQueue, IEventManager } from "./lib/event";
 import { logger, Logger } from "./lib/logger";
@@ -25,6 +26,7 @@ import {
 import { FormoAnalyticsSession } from "./lib/session";
 import { WagmiEventHandler } from "./lib/wagmi";
 import { AppLifecycleManager } from "./lib/lifecycle";
+import { CrashReporter } from "./lib/crash";
 import {
   Address,
   ChainID,
@@ -42,12 +44,21 @@ import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSo
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
 
+/**
+ * Autocapture behaviors that are OFF unless explicitly enabled, because
+ * turning them on by default would change how an existing app behaves after a
+ * routine SDK upgrade. See AutocaptureOptions for the reasoning per option.
+ */
+const OPT_IN_AUTOCAPTURE = new Set<string>(["foregrounded", "crashes"]);
+
 export class FormoAnalytics implements IFormoAnalytics {
   private session: FormoAnalyticsSession;
   private eventManager: IEventManager;
   private eventQueue: EventQueue;
   private wagmiHandler?: WagmiEventHandler;
   private lifecycleManager?: AppLifecycleManager;
+  private crashReporter?: CrashReporter;
+  private initialDeepLinkUrl?: string;
   private linkingSubscription?: EmitterSubscription;
 
   config: Config;
@@ -166,9 +177,29 @@ export class FormoAnalytics implements IFormoAnalytics {
     if (analytics.isAutocaptureEnabled("lifecycle")) {
       try {
         analytics.lifecycleManager = new AppLifecycleManager(analytics);
-        await analytics.lifecycleManager.start(options?.app);
+        await analytics.lifecycleManager.start(options?.app, {
+          trackForegrounded: analytics.isAutocaptureEnabled("foregrounded"),
+        });
       } catch (error) {
         logger.error("FormoAnalytics: Failed to initialize lifecycle tracking", error);
+      }
+    }
+
+    // Emit Deep Link Opened for the launch URL AFTER lifecycle tracking, so it
+    // follows Application Opened as the Segment spec orders it.
+    try {
+      await analytics.trackInitialDeepLink();
+    } catch (error) {
+      logger.error("FormoAnalytics: Failed to track initial deep link", error);
+    }
+
+    // Opt-in: installs a global JS error handler (chained, never swallowing).
+    if (analytics.isAutocaptureEnabled("crashes")) {
+      try {
+        analytics.crashReporter = new CrashReporter(analytics);
+        analytics.crashReporter.start();
+      } catch (error) {
+        logger.error("FormoAnalytics: Failed to initialize crash tracking", error);
       }
     }
 
@@ -188,15 +219,94 @@ export class FormoAnalytics implements IFormoAnalytics {
   private async startDeepLinkCapture(): Promise<void> {
     try {
       const url = await Linking.getInitialURL();
-      if (url) this.setTrafficSourceFromUrl(url);
+      if (url) {
+        this.setTrafficSourceFromUrl(url);
+        // Held, not emitted: this runs before lifecycle tracking starts, and
+        // the Segment spec orders `Deep Link Opened` after `Application
+        // Opened`. Emitted by trackInitialDeepLink() once lifecycle has fired.
+        this.initialDeepLinkUrl = url;
+      }
     } catch (error) {
       logger.debug("FormoAnalytics: Linking.getInitialURL failed", error);
     }
 
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
-      if (event?.url) this.setTrafficSourceFromUrl(event.url);
+      if (!event?.url) return;
+      this.setTrafficSourceFromUrl(event.url);
+      void this.trackDeepLinkOpened(event.url);
     });
+  }
+
+  /**
+   * Emit `Deep Link Opened` for the URL the app was launched with, if any.
+   * Separate from capture so it can be ordered after `Application Opened`.
+   */
+  private async trackInitialDeepLink(): Promise<void> {
+    const url = this.initialDeepLinkUrl;
+    this.initialDeepLinkUrl = undefined;
+    if (url) await this.trackDeepLinkOpened(url);
+  }
+
+  /**
+   * Emit the Segment-spec `Deep Link Opened` event.
+   *
+   * `provider` is deliberately omitted: the spec uses it to name the
+   * attribution provider that resolved the link (Branch, Adjust, …). The SDK
+   * reads the link straight from React Native's Linking API, so there is no
+   * provider to name, and emitting a placeholder would misreport the source.
+   */
+  private async trackDeepLinkOpened(url: string): Promise<void> {
+    if (!this.isAutocaptureEnabled("deepLinks")) return;
+    try {
+      await this.track(LIFECYCLE_EVENT.DEEP_LINK_OPENED, { url });
+    } catch (error) {
+      logger.error("FormoAnalytics: Error tracking Deep Link Opened", error);
+    }
+  }
+
+  /**
+   * Track that a push notification was delivered to the device.
+   *
+   * Push delivery cannot be observed without a native module, so the SDK
+   * cannot autocapture these — call this from your push handler
+   * (`@react-native-firebase/messaging`, `expo-notifications`, …).
+   *
+   * @param properties Segment's push spec suggests `campaign_id`, `campaign_name`,
+   *   `message_id`, `action` and `title`/`body`. Any properties are accepted.
+   *
+   * @example
+   * ```tsx
+   * messaging().onMessage(async (message) => {
+   *   await formo.pushNotificationReceived({ message_id: message.messageId });
+   * });
+   * ```
+   */
+  public async pushNotificationReceived(
+    properties?: IFormoEventProperties
+  ): Promise<void> {
+    await this.track(LIFECYCLE_EVENT.PUSH_NOTIFICATION_RECEIVED, properties);
+  }
+
+  /**
+   * Track that the user opened the app by tapping a push notification.
+   * See {@link pushNotificationReceived} for why this is not autocaptured.
+   */
+  public async pushNotificationTapped(
+    properties?: IFormoEventProperties
+  ): Promise<void> {
+    await this.track(LIFECYCLE_EVENT.PUSH_NOTIFICATION_TAPPED, properties);
+  }
+
+  /**
+   * Track that a push notification was not delivered — e.g. the OS suppressed
+   * it, or the device token was rejected.
+   * See {@link pushNotificationReceived} for why this is not autocaptured.
+   */
+  public async pushNotificationBounced(
+    properties?: IFormoEventProperties
+  ): Promise<void> {
+    await this.track(LIFECYCLE_EVENT.PUSH_NOTIFICATION_BOUNCED, properties);
   }
 
   /**
@@ -271,6 +381,11 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public async cleanup(): Promise<void> {
     logger.info("FormoAnalytics: Cleaning up resources");
+
+    if (this.crashReporter) {
+      this.crashReporter.cleanup();
+      this.crashReporter = undefined;
+    }
 
     if (this.lifecycleManager) {
       this.lifecycleManager.cleanup();
@@ -631,6 +746,12 @@ export class FormoAnalytics implements IFormoAnalytics {
    * Applies only to event-generating behaviors (wallet events, lifecycle
    * events). Attribution is controlled separately via `options.attribution`
    * because it enriches events rather than generating them.
+   *
+   * Most behaviors are on unless explicitly disabled. The two in
+   * {@link OPT_IN_AUTOCAPTURE} invert that and require an explicit `true`,
+   * because switching them on by default would change existing apps on a
+   * version bump: `foregrounded` doubles foreground event volume, and
+   * `crashes` installs a global error handler.
    */
   public isAutocaptureEnabled(
     eventType:
@@ -640,13 +761,20 @@ export class FormoAnalytics implements IFormoAnalytics {
       | "transaction"
       | "chain"
       | "lifecycle"
+      | "foregrounded"
+      | "deepLinks"
+      | "crashes"
   ): boolean {
+    const isOptIn = OPT_IN_AUTOCAPTURE.has(eventType);
+
     if (this.options.autocapture === undefined) {
-      return true;
+      return !isOptIn;
     }
 
+    // `autocapture: true` means "the usual set", not "everything including the
+    // opt-in behaviors" — those still need naming individually.
     if (typeof this.options.autocapture === "boolean") {
-      return this.options.autocapture;
+      return this.options.autocapture && !isOptIn;
     }
 
     if (
@@ -654,10 +782,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       typeof this.options.autocapture === "object"
     ) {
       const eventConfig = this.options.autocapture[eventType];
-      return eventConfig !== false;
+      return isOptIn ? eventConfig === true : eventConfig !== false;
     }
 
-    return true;
+    return !isOptIn;
   }
 
   /**

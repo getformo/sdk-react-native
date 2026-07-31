@@ -436,6 +436,83 @@ describe('FormoAnalytics', () => {
       expect(instance.isAutocaptureEnabled('disconnect')).toBe(false);
       expect(instance.isAutocaptureEnabled('transaction')).toBe(false);
     });
+
+    // `foregrounded` and `crashes` invert the default. Turning either on
+    // silently would change an existing app's behavior on a version bump:
+    // foregrounded doubles foreground event volume, and crashes installs a
+    // global JS error handler.
+    it.each(['foregrounded', 'crashes'] as const)(
+      'keeps %s off by default',
+      (option) => {
+        expect(analytics.isAutocaptureEnabled(option)).toBe(false);
+      },
+    );
+
+    it.each(['foregrounded', 'crashes'] as const)(
+      'keeps %s off even when autocapture is globally true',
+      async (option) => {
+        // `autocapture: true` means "the usual set", not "everything".
+        const instance = await FormoAnalytics.init('key', { autocapture: true });
+
+        expect(instance.isAutocaptureEnabled(option)).toBe(false);
+        expect(instance.isAutocaptureEnabled('connect')).toBe(true);
+      },
+    );
+
+    it.each(['foregrounded', 'crashes'] as const)(
+      'enables %s only when named explicitly',
+      async (option) => {
+        const instance = await FormoAnalytics.init('key', {
+          autocapture: { [option]: true },
+        });
+
+        expect(instance.isAutocaptureEnabled(option)).toBe(true);
+      },
+    );
+
+    it('keeps deepLinks on by default and honours an explicit false', async () => {
+      expect(analytics.isAutocaptureEnabled('deepLinks')).toBe(true);
+
+      const instance = await FormoAnalytics.init('key', {
+        autocapture: { deepLinks: false },
+      });
+      expect(instance.isAutocaptureEnabled('deepLinks')).toBe(false);
+    });
+
+    it('disables the opt-in behaviors when autocapture is globally false', async () => {
+      const instance = await FormoAnalytics.init('key', { autocapture: false });
+
+      expect(instance.isAutocaptureEnabled('foregrounded')).toBe(false);
+      expect(instance.isAutocaptureEnabled('crashes')).toBe(false);
+      expect(instance.isAutocaptureEnabled('deepLinks')).toBe(false);
+    });
+  });
+
+  describe('push notification events', () => {
+    // Push delivery is invisible to JS without a native module, so these are
+    // explicit calls rather than autocapture. They must emit the exact
+    // Segment-spec names — that is what makes them recognisable downstream.
+    it.each([
+      ['pushNotificationReceived', 'Push Notification Received'],
+      ['pushNotificationTapped', 'Push Notification Tapped'],
+      ['pushNotificationBounced', 'Push Notification Bounced'],
+    ] as const)('%s emits "%s"', async (method, eventName) => {
+      const trackSpy = jest.spyOn(analytics, 'track').mockResolvedValue();
+
+      await analytics[method]({ campaign_id: 'c1' });
+
+      expect(trackSpy).toHaveBeenCalledWith(eventName, { campaign_id: 'c1' });
+      trackSpy.mockRestore();
+    });
+
+    it('accepts no properties', async () => {
+      const trackSpy = jest.spyOn(analytics, 'track').mockResolvedValue();
+
+      await analytics.pushNotificationTapped();
+
+      expect(trackSpy).toHaveBeenCalledWith('Push Notification Tapped', undefined);
+      trackSpy.mockRestore();
+    });
   });
 
   describe('reset()', () => {
