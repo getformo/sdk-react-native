@@ -128,6 +128,38 @@ export function getSessionId(): string {
  * device breakdowns downstream. Unknown means "mobile", the safe default for a
  * React Native app.
  */
+interface DeviceInfoResult {
+  os_name: string;
+  os_version: string;
+  device_model: string;
+  device_manufacturer: string;
+  device_name: string;
+  device_type: string;
+  user_agent: string;
+  app_name: string;
+  app_version: string;
+  app_build: string;
+  app_bundle_id: string;
+}
+
+/**
+ * Compose a screen view's `page_url` as `app://<bundle id>/<screen>`.
+ *
+ * Well-formed on purpose: the bundle id occupies the authority slot and the
+ * screen the path, so a standard URL parser yields both without any
+ * mobile-specific handling — the same shape as `https://<host>/<path>`.
+ *
+ * @param bundleId Application bundle id, e.g. "com.acme.wallet". When empty the
+ *   authority is omitted (`app:///<screen>`), which still parses to a correct
+ *   path; the pipeline resolves origin from context in that case.
+ * @param name Screen name. Leading slashes are stripped so a router-style name
+ *   ("/tabs/leaderboard") does not produce a doubled separator.
+ */
+export function buildScreenUrl(bundleId: string, name: string): string {
+  const screen = (name ?? "").replace(/^\/+/, "");
+  return `app://${bundleId ?? ""}/${screen}`;
+}
+
 export function resolveExpoDeviceType(
   deviceType: number | null | undefined,
   tabletEnumValue: number | null | undefined,
@@ -165,6 +197,8 @@ export function synthesizeUserAgent(info: {
  */
 class EventFactory implements IEventFactory {
   private options?: Options;
+  /** Memoised device/app identity — see getDeviceInfo(). */
+  private deviceInfoPromise?: Promise<DeviceInfoResult>;
 
   constructor(options?: Options) {
     this.options = options;
@@ -288,19 +322,16 @@ class EventFactory implements IEventFactory {
    * Get device information
    * Supports both react-native-device-info (bare RN) and expo-device/expo-application (Expo Go)
    */
-  private async getDeviceInfo(): Promise<{
-    os_name: string;
-    os_version: string;
-    device_model: string;
-    device_manufacturer: string;
-    device_name: string;
-    device_type: string;
-    user_agent: string;
-    app_name: string;
-    app_version: string;
-    app_build: string;
-    app_bundle_id: string;
-  }> {
+  private async getDeviceInfo(): Promise<DeviceInfoResult> {
+    // Device and app identity do not change for the lifetime of the process,
+    // and resolving them crosses the native bridge. Memoise the promise so
+    // every event after the first is free, and so callers that need only the
+    // app identifier (screen events) can ask without paying twice.
+    this.deviceInfoPromise ??= this.resolveDeviceInfo();
+    return this.deviceInfoPromise;
+  }
+
+  private async resolveDeviceInfo(): Promise<DeviceInfoResult> {
     // Try react-native-device-info first (bare RN and Expo dev builds)
     if (DeviceInfo) {
       try {
@@ -509,15 +540,29 @@ class EventFactory implements IEventFactory {
     const props = { ...(properties ?? {}), name, ...(category && { category }) };
 
     // Map screen name to page-equivalent context fields so mobile screens flow
-    // through the same analytics as web page views. The screen name is emitted
-    // as-is in the app:// URL; the ingestion pipeline derives `origin` (from the
-    // app identifier in context — app_name / app_bundle_id) and `page_path` (by
-    // stripping the app:// scheme), so the SDK deliberately does NOT encode a
-    // host here (see backend mobile page-event handling, P-2070).
+    // through the same analytics as web page views.
+    //
+    // The URL is app://<bundle id>/<screen>, which is a WELL-FORMED URL: the
+    // bundle id is the authority and the screen is the path, exactly mirroring
+    // https://<host>/<path> on web. That is what lets the ingestion pipeline
+    // parse it with the same URL functions it uses for web — the authority
+    // becomes `origin` and the path becomes `page_path`, with no mobile
+    // special-casing.
+    //
+    // The earlier form was app://<screen>, which is malformed: the screen name
+    // lands in the authority slot and there is no path at all, so a URL parser
+    // yields an empty path and the pipeline had to reconstruct both fields by
+    // hand. The bundle id is also the right choice of authority because, like a
+    // hostname, it is stable and globally unique — a display name is neither.
+    //
+    // Falls back to an empty authority (app:///<screen>) when the bundle id is
+    // unavailable, which keeps the path parseable and lets the pipeline resolve
+    // origin from context instead.
     // User-supplied context values take precedence (spread last).
+    const { app_bundle_id } = await this.getDeviceInfo();
     const screenContext: IFormoEventContext = {
       page_title: name,
-      page_url: `app://${name}`,
+      page_url: buildScreenUrl(app_bundle_id, name),
       ...(context ?? {}),
     };
 
