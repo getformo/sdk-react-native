@@ -117,6 +117,25 @@ export function getSessionId(): string {
  * containing the tokens the classifier keys off (iphone/ipad/android + version)
  * so mobile device and OS resolve correctly. Returns "" for unknown platforms.
  */
+/**
+ * Resolve `device_type` from expo-device's `deviceType` enum.
+ *
+ * Extracted and guarded because the Expo branch of getDeviceInfo() runs when
+ * EITHER expo-device or expo-application is installed, so `deviceType` may be
+ * undefined. A bare `deviceType === DeviceType.TABLET` is then
+ * `undefined === undefined` — true — and every device reports as a tablet,
+ * which also flips the synthesized user agent to iPad/Tablet and corrupts
+ * device breakdowns downstream. Unknown means "mobile", the safe default for a
+ * React Native app.
+ */
+export function resolveExpoDeviceType(
+  deviceType: number | null | undefined,
+  tabletEnumValue: number | null | undefined,
+): "tablet" | "mobile" {
+  if (deviceType == null || tabletEnumValue == null) return "mobile";
+  return deviceType === tabletEnumValue ? "tablet" : "mobile";
+}
+
 export function synthesizeUserAgent(info: {
   os_name: string;
   os_version: string;
@@ -324,11 +343,13 @@ class EventFactory implements IEventFactory {
     // Fall back to Expo modules (Expo Go)
     if (ExpoDevice || ExpoApplication) {
       try {
-        const isTablet = ExpoDevice?.deviceType === ExpoDevice?.DeviceType?.TABLET;
         const os_name = ExpoDevice?.osName || Platform.OS;
         const os_version = ExpoDevice?.osVersion || String(Platform.Version);
         const device_model = ExpoDevice?.modelName || "Unknown";
-        const device_type = isTablet ? "tablet" : "mobile";
+        const device_type = resolveExpoDeviceType(
+          ExpoDevice?.deviceType,
+          ExpoDevice?.DeviceType?.TABLET,
+        );
         return {
           os_name,
           os_version,
