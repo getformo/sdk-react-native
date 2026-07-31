@@ -89,9 +89,9 @@ describe("Expo device context without expo-device", () => {
   });
 
   it("does not synthesize an iPad user agent", async () => {
-    const { user_agent } = await contextOfFirstEvent();
-    expect(user_agent.toLowerCase()).not.toContain("ipad");
-    expect(user_agent.toLowerCase()).toContain("iphone");
+    const userAgent = String((await contextOfFirstEvent()).user_agent);
+    expect(userAgent.toLowerCase()).not.toContain("ipad");
+    expect(userAgent.toLowerCase()).toContain("iphone");
   });
 
   it("still resolves app identity from expo-application", async () => {
