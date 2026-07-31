@@ -95,6 +95,13 @@ export interface IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void>;
 
+  // Push notification lifecycle events. Not autocaptured: push delivery is
+  // invisible to JavaScript without a native module, so the host app forwards
+  // these from its own push handler.
+  pushNotificationReceived(properties?: IFormoEventProperties): Promise<void>;
+  pushNotificationTapped(properties?: IFormoEventProperties): Promise<void>;
+  pushNotificationBounced(properties?: IFormoEventProperties): Promise<void>;
+
   // Event flushing
   flush(): Promise<void>;
 
@@ -158,6 +165,46 @@ export interface AutocaptureOptions {
    * @default true
    */
   lifecycle?: boolean;
+
+  /**
+   * Emit `Application Foregrounded` on every background → active transition,
+   * in addition to the `Application Opened` (with `from_background: true`) that
+   * already fires there.
+   *
+   * Off by default because it doubles foreground event volume and adds no
+   * information: `Application Opened` with `from_background: true` already
+   * marks the same transition. Enable it if you consume the Segment spec's
+   * `Application Foregrounded` name directly — e.g. when migrating dashboards
+   * or destinations from Segment or RudderStack. Requires `lifecycle`.
+   * @default false
+   */
+  foregrounded?: boolean;
+
+  /**
+   * Track `Deep Link Opened` when the app is launched or resumed via a deep
+   * link or universal link, with the `url` property.
+   *
+   * Independent of `attribution.deeplinks`, which controls whether the link's
+   * UTM/referral parameters are parsed into event context. This option is only
+   * about emitting the event; the SDK still needs `attribution.deeplinks` to
+   * observe links at all.
+   * @default true
+   */
+  deepLinks?: boolean;
+
+  /**
+   * Track `Application Crashed` on unhandled JavaScript errors, with the error
+   * message, stack, and whether React Native considered it fatal.
+   *
+   * Off by default because enabling it installs a global error handler
+   * (`ErrorUtils.setGlobalHandler`). The previous handler is always invoked
+   * afterwards, so React Native's redbox and any crash reporter you already use
+   * keep working — but installing one implicitly on an SDK upgrade is a
+   * surprise, so it is opt-in. Covers JS errors only: native crashes need a
+   * native crash reporter.
+   * @default false
+   */
+  crashes?: boolean;
 }
 
 /**

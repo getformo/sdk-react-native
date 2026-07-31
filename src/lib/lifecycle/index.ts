@@ -6,8 +6,15 @@
  * - Application Updated (version/build changed)
  * - Application Opened (every cold start + foreground return)
  * - Application Backgrounded (app goes to background)
+ * - Application Foregrounded (foreground return; opt-in, see AutocaptureOptions)
  *
  * Detection is JS-side using AsyncStorage (no native modules required).
+ *
+ * The remaining spec events live outside this manager because they are not
+ * AppState-driven: `Deep Link Opened` is emitted from the Linking hook in
+ * FormoAnalytics, `Application Crashed` from lib/crash, and the push
+ * notification events from explicit FormoAnalytics methods (the SDK cannot
+ * observe push delivery without a native module).
  */
 
 import { AppState, AppStateStatus, Linking } from "react-native";
@@ -18,6 +25,7 @@ import {
   LOCAL_APP_BUILD_KEY,
 } from "../../constants/storage";
 import { getStoredTrafficSource } from "../../utils/trafficSource";
+import { LIFECYCLE_EVENT } from "../../constants/events";
 
 /** Interface for the analytics instance to avoid circular deps */
 interface IAnalyticsInstance {
@@ -75,6 +83,7 @@ export class AppLifecycleManager {
   private appStateSubscription: { remove: () => void } | null = null;
   private lastAppState: AppStateStatus = AppState.currentState;
   private appVersionInfo: AppVersionInfo = { version: "", build: "" };
+  private trackForegrounded = false;
 
   constructor(analytics: IAnalyticsInstance) {
     this.analytics = analytics;
@@ -85,8 +94,10 @@ export class AppLifecycleManager {
    * Detects install/update, fires Application Opened, and sets up AppState listener.
    */
   async start(
-    appOptions?: { version?: string; build?: string }
+    appOptions?: { version?: string; build?: string },
+    options?: { trackForegrounded?: boolean }
   ): Promise<void> {
+    this.trackForegrounded = options?.trackForegrounded ?? false;
     this.appVersionInfo = await resolveAppVersionInfo(appOptions);
 
     // Detect install vs update
@@ -103,7 +114,7 @@ export class AppLifecycleManager {
       // Linking not available
     }
 
-    await this.analytics.track("Application Opened", {
+    await this.analytics.track(LIFECYCLE_EVENT.APPLICATION_OPENED, {
       version: this.appVersionInfo.version,
       build: this.appVersionInfo.build,
       from_background: false,
@@ -151,7 +162,7 @@ export class AppLifecycleManager {
         Object.entries(trafficSource).filter(([, value]) => Boolean(value))
       );
       logger.info("AppLifecycleManager: Application Installed");
-      await this.analytics.track("Application Installed", {
+      await this.analytics.track(LIFECYCLE_EVENT.APPLICATION_INSTALLED, {
         version,
         build,
         ...attribution,
@@ -159,7 +170,7 @@ export class AppLifecycleManager {
     } else if (previousVersion !== version || previousBuild !== build) {
       // Version or build changed — update
       logger.info("AppLifecycleManager: Application Updated");
-      await this.analytics.track("Application Updated", {
+      await this.analytics.track(LIFECYCLE_EVENT.APPLICATION_UPDATED, {
         version,
         build,
         previous_version: previousVersion || "",
@@ -186,7 +197,7 @@ export class AppLifecycleManager {
     if (nextAppState === "active" && this.lastAppState === "background") {
       // Returning from background
       this.analytics
-        .track("Application Opened", {
+        .track(LIFECYCLE_EVENT.APPLICATION_OPENED, {
           version: this.appVersionInfo.version,
           build: this.appVersionInfo.build,
           from_background: true,
@@ -194,12 +205,30 @@ export class AppLifecycleManager {
         .catch((error) => {
           logger.error("AppLifecycleManager: Error tracking Application Opened", error);
         });
+
+      // The Segment spec's dedicated name for this same transition. Opt-in,
+      // because emitting it alongside Application Opened doubles foreground
+      // volume for no extra information — it exists for consumers that key on
+      // the spec name rather than on `from_background`.
+      if (this.trackForegrounded) {
+        this.analytics
+          .track(LIFECYCLE_EVENT.APPLICATION_FOREGROUNDED, {
+            version: this.appVersionInfo.version,
+            build: this.appVersionInfo.build,
+          })
+          .catch((error) => {
+            logger.error(
+              "AppLifecycleManager: Error tracking Application Foregrounded",
+              error
+            );
+          });
+      }
     }
 
     if (nextAppState === "background" && this.lastAppState === "active") {
       // Going to background
       this.analytics
-        .track("Application Backgrounded", {
+        .track(LIFECYCLE_EVENT.APPLICATION_BACKGROUNDED, {
           version: this.appVersionInfo.version,
           build: this.appVersionInfo.build,
         })
