@@ -71,6 +71,9 @@ describe("lifecycle events on the wire", () => {
     return analytics;
   };
 
+  /** Let queued microtasks and the fire-and-forget track() calls settle. */
+  const tick = () => new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+
   const names = () => sent.map((e) => e.event ?? `<${e.type}>`);
   const find = (event: string) => sent.find((e) => e.event === event);
 
@@ -104,7 +107,7 @@ describe("lifecycle events on the wire", () => {
     sent.length = 0;
     handler("background");
     handler("active");
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
 
     expect(names()).toEqual([
       "Application Backgrounded",
@@ -124,7 +127,7 @@ describe("lifecycle events on the wire", () => {
     sent.length = 0;
     handler("background");
     handler("active");
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
 
     expect(names()).toEqual(["Application Backgrounded", "Application Opened"]);
   });
@@ -170,7 +173,7 @@ describe("lifecycle events on the wire", () => {
 
     sent.length = 0;
     handler({ url: "formo-demo://settings?utm_source=email" });
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
 
     expect(find("Deep Link Opened")).toMatchObject({
       properties: { url: "formo-demo://settings?utm_source=email" },
@@ -193,7 +196,7 @@ describe("lifecycle events on the wire", () => {
     sent.length = 0;
     const boom = new TypeError("undefined is not a function");
     current!(boom, true);
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
 
     expect(find("Application Crashed")).toMatchObject({
       type: "track",
@@ -259,6 +262,6 @@ describe("lifecycle events on the wire", () => {
     // os_name casing is platform-dependent — "ios" from Platform.OS, "iOS" or
     // "iPadOS" from expo-device, or an Android build fingerprint. The pipe
     // lowercases before comparing, so only the identity matters here.
-    expect(context.os_name.toLowerCase()).toBe("ios");
+    expect(String(context.os_name).toLowerCase()).toBe("ios");
   });
 });
