@@ -100,3 +100,29 @@ describe("generateScreenEvent page_url", () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("generateScreenEvent bundle id resolution", () => {
+  beforeEach(() => initStorageManager("screen-bundle-key"));
+
+  it("prefers an explicitly configured options.app.bundleId", async () => {
+    // generateContext lets options.app.bundleId override the native modules, so
+    // the URL has to use the same precedence. Reading device info alone would
+    // ignore the configuration — and on React Native Web nothing else resolves a
+    // bundle id, so every screen URL would lose its authority.
+    const factory = new EventFactory({ app: { bundleId: "com.configured.app" } });
+    const evt = await factory.generateScreenEvent("Wallet");
+
+    expect(evt.context?.page_url).toBe("app://com.configured.app/Wallet");
+    // The URL authority and the context field must not disagree.
+    expect(evt.context?.app_bundle_id).toBe("com.configured.app");
+  });
+
+  it("falls back to the detected bundle id when none is configured", async () => {
+    const factory = new EventFactory();
+    const evt = await factory.generateScreenEvent("Wallet");
+
+    expect(evt.context?.page_url).toBe(
+      `app://${evt.context?.app_bundle_id}/Wallet`,
+    );
+  });
+});

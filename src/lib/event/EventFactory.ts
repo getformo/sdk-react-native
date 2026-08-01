@@ -322,6 +322,22 @@ class EventFactory implements IEventFactory {
    * Get device information
    * Supports both react-native-device-info (bare RN) and expo-device/expo-application (Expo Go)
    */
+  /**
+   * The app bundle id as it will appear in context.
+   *
+   * Must mirror generateContext's precedence: an explicitly configured
+   * `options.app.bundleId` overrides whatever the native modules report. Reading
+   * getDeviceInfo() alone would ignore that configuration and silently fall back
+   * to the authority-less URL form — and on React Native Web, where neither
+   * react-native-device-info nor expo-application resolves a bundle id, that is
+   * the ONLY value available.
+   */
+  private async resolveAppBundleId(): Promise<string> {
+    return (
+      this.options?.app?.bundleId || (await this.getDeviceInfo()).app_bundle_id || ""
+    );
+  }
+
   private async getDeviceInfo(): Promise<DeviceInfoResult> {
     // Device and app identity do not change for the lifetime of the process,
     // and resolving them crosses the native bridge. Memoise the promise so
@@ -559,10 +575,9 @@ class EventFactory implements IEventFactory {
     // unavailable, which keeps the path parseable and lets the pipeline resolve
     // origin from context instead.
     // User-supplied context values take precedence (spread last).
-    const { app_bundle_id } = await this.getDeviceInfo();
     const screenContext: IFormoEventContext = {
       page_title: name,
-      page_url: buildScreenUrl(app_bundle_id, name),
+      page_url: buildScreenUrl(await this.resolveAppBundleId(), name),
       ...(context ?? {}),
     };
 
