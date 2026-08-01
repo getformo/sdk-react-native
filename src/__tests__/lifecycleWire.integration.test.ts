@@ -240,10 +240,12 @@ describe("lifecycle events on the wire", () => {
     await analytics.screen("Wallet");
     await analytics.flush();
 
+    // Well-formed: bundle id in the authority, screen in the path, so the
+    // Tinybird pipe parses both with plain URL functions.
     expect(sent[0]).toMatchObject({
       type: "page",
       channel: "mobile",
-      context: expect.objectContaining({ page_url: "app://Wallet" }),
+      context: expect.objectContaining({ page_url: "app://com.test.app/Wallet" }),
     });
   });
 
