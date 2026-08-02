@@ -64,18 +64,31 @@ export class CrashReporter {
       return;
     }
 
-    this.previousHandler = errorUtils.getGlobalHandler();
+    // Captured in the closure, NOT read from `this` at crash time. If another
+    // reporter wraps us afterwards our handler stays reachable through its
+    // chain, and cleanup() clearing the field would otherwise sever the chain
+    // at the moment it matters: A.start, B.start, A.cleanup, crash — B calls
+    // our handler, which would then forward to `undefined` and the real
+    // RN/default handler would never run.
+    const previousHandler = errorUtils.getGlobalHandler();
+    this.previousHandler = previousHandler;
 
     const handler: ErrorHandler = (error, isFatal) => {
       // Nothing in here may throw: this runs while the app is already failing,
       // and an exception would replace the real crash with ours.
-      try {
-        this.report(error, isFatal);
-      } catch (reportingError) {
-        logger.debug("CrashReporter: failed to report crash", reportingError);
+      //
+      // `started` is checked so a cleaned-up reporter still FORWARDS (keeping
+      // the chain intact) but no longer reports — otherwise the sequence above
+      // would emit a duplicate Application Crashed from the stopped instance.
+      if (this.started) {
+        try {
+          this.report(error, isFatal);
+        } catch (reportingError) {
+          logger.debug("CrashReporter: failed to report crash", reportingError);
+        }
       }
 
-      this.previousHandler?.(error, isFatal);
+      previousHandler?.(error, isFatal);
     };
 
     this.installedHandler = handler;
@@ -123,9 +136,10 @@ export class CrashReporter {
       errorUtils.setGlobalHandler(this.previousHandler);
     }
 
+    // previousHandler is deliberately NOT cleared: if another reporter wrapped
+    // us, our installed handler is still in its chain and must keep forwarding.
     this.started = false;
     this.installedHandler = undefined;
-    this.previousHandler = undefined;
     logger.info("CrashReporter: Cleaned up");
   }
 }

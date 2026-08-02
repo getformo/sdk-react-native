@@ -158,3 +158,72 @@ describe("CrashReporter", () => {
     expect(analytics.track).not.toHaveBeenCalled();
   });
 });
+
+describe("CrashReporter chained with another reporter", () => {
+  // The failure this guards: two reporters exist (e.g. the provider
+  // re-initialising, or a customer's own reporter wrapping ours), the first is
+  // cleaned up, then the app crashes. If our installed handler reads
+  // `this.previousHandler` at crash time — which cleanup() had cleared — the
+  // chain terminates at us and the real RN/default handler never runs.
+  type Handler = (error: Error, isFatal?: boolean) => void;
+
+  let original: jest.Mock;
+  let current: Handler | undefined;
+  let analyticsA: { track: jest.Mock; flush: jest.Mock };
+  let analyticsB: { track: jest.Mock; flush: jest.Mock };
+
+  const g = globalThis as {
+    ErrorUtils?: {
+      getGlobalHandler: () => Handler | undefined;
+      setGlobalHandler: (h: Handler) => void;
+    };
+  };
+
+  const mkAnalytics = () => ({
+    track: jest.fn().mockResolvedValue(undefined),
+    flush: jest.fn().mockResolvedValue(undefined),
+  });
+
+  beforeEach(() => {
+    original = jest.fn();
+    current = original;
+    g.ErrorUtils = {
+      getGlobalHandler: () => current,
+      setGlobalHandler: (h: Handler) => {
+        current = h;
+      },
+    };
+    analyticsA = mkAnalytics();
+    analyticsB = mkAnalytics();
+  });
+
+  afterEach(() => {
+    delete g.ErrorUtils;
+  });
+
+  it("still reaches the original handler after the inner reporter is cleaned up", () => {
+    const a = new CrashReporter(analyticsA);
+    const b = new CrashReporter(analyticsB);
+    a.start();
+    b.start();
+    a.cleanup(); // b's chain still points at a's installed handler
+
+    const error = new Error("boom");
+    current!(error, true);
+
+    expect(original).toHaveBeenCalledWith(error, true);
+  });
+
+  it("does not double-report from the cleaned-up reporter", () => {
+    const a = new CrashReporter(analyticsA);
+    const b = new CrashReporter(analyticsB);
+    a.start();
+    b.start();
+    a.cleanup();
+
+    current!(new Error("boom"), true);
+
+    expect(analyticsB.track).toHaveBeenCalledTimes(1);
+    expect(analyticsA.track).not.toHaveBeenCalled();
+  });
+});

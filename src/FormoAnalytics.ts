@@ -153,7 +153,16 @@ export class FormoAnalytics implements IFormoAnalytics {
     // is a fast native bridge call; the Android Play Install Referrer is a fast
     // one-shot native call (and no-ops instantly when the native module or the
     // platform isn't Android), so awaiting it does not meaningfully delay init.
-    if (analytics.isAttributionEnabled("deeplinks")) {
+    // Hook Linking if EITHER consumer needs it. The two flags control different
+    // things — attribution.deeplinks parses UTMs into context, autocapture
+    // .deepLinks emits Deep Link Opened — but both depend on observing the link
+    // in the first place. Gating the hook on attribution alone silently
+    // disabled the event for anyone who turned attribution off, with no
+    // indication that an unrelated setting was responsible.
+    if (
+      analytics.isAttributionEnabled("deeplinks") ||
+      analytics.isAutocaptureEnabled("deepLinks")
+    ) {
       try {
         await analytics.startDeepLinkCapture();
       } catch (error) {
@@ -220,7 +229,9 @@ export class FormoAnalytics implements IFormoAnalytics {
     try {
       const url = await Linking.getInitialURL();
       if (url) {
-        this.setTrafficSourceFromUrl(url);
+        if (this.isAttributionEnabled("deeplinks")) {
+          this.setTrafficSourceFromUrl(url);
+        }
         // Held, not emitted: this runs before lifecycle tracking starts, and
         // the Segment spec orders `Deep Link Opened` after `Application
         // Opened`. Emitted by trackInitialDeepLink() once lifecycle has fired.
@@ -233,7 +244,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
       if (!event?.url) return;
-      this.setTrafficSourceFromUrl(event.url);
+      // Each behaviour checks its own flag: the hook may exist because only one
+      // of them is enabled.
+      if (this.isAttributionEnabled("deeplinks")) {
+        this.setTrafficSourceFromUrl(event.url);
+      }
       void this.trackDeepLinkOpened(event.url);
     });
   }

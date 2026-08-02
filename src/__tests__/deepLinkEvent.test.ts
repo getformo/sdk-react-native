@@ -87,8 +87,25 @@ describe("Deep Link Opened", () => {
     expect(trackedEvents).not.toContain("Deep Link Opened");
   });
 
-  it("does not subscribe at all when deep-link attribution is disabled", async () => {
+  it("still emits the event when only attribution is disabled", async () => {
+    // The two flags are independent: attribution.deeplinks parses UTMs into
+    // context, autocapture.deepLinks emits the event. Turning attribution off
+    // must not silently take the event with it — the Linking hook has to be
+    // installed if EITHER consumer needs it.
     await init({ attribution: { deeplinks: false } });
+    const handler = addEventListener.mock.calls.at(-1)?.[1];
+    expect(handler).toBeDefined();
+
+    await handler({ url: "myapp://product" });
+
+    expect(trackedEvents).toContain("Deep Link Opened");
+  });
+
+  it("does not subscribe when BOTH deep-link flags are disabled", async () => {
+    await init({
+      attribution: { deeplinks: false },
+      autocapture: { deepLinks: false },
+    });
 
     expect(addEventListener).not.toHaveBeenCalled();
   });
