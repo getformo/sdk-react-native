@@ -156,7 +156,20 @@ interface DeviceInfoResult {
  *   ("/tabs/leaderboard") does not produce a doubled separator.
  */
 export function buildScreenUrl(bundleId: string, name: string): string {
-  const screen = (name ?? "").replace(/^\/+/, "");
+  const screen = (name ?? "")
+    .replace(/^\/+/, "")
+    // Percent-encode the characters that would otherwise change the URL's
+    // STRUCTURE rather than its path. '?' starts a query and '#' a fragment, so
+    // screen("Checkout?coupon=X") would parse with pathname "/Checkout" and the
+    // rest silently dropped from the screen name. '/' is deliberately NOT
+    // encoded — router-style names like "/tabs/leaderboard" are meant to be
+    // path segments.
+    // '%' FIRST, so the transform stays injective. Without it a screen literally
+    // named "Checkout%3Fx" and one named "Checkout?x" both produce
+    // ".../Checkout%3Fx" and two distinct screens merge in the analytics.
+    .replace(/%/g, "%25")
+    .replace(/\?/g, "%3F")
+    .replace(/#/g, "%23");
   return `app://${bundleId ?? ""}/${screen}`;
 }
 

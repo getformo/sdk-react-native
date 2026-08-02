@@ -126,3 +126,67 @@ describe("generateScreenEvent bundle id resolution", () => {
     );
   });
 });
+
+describe("buildScreenUrl structural characters", () => {
+  // The URL is parsed downstream with standard URL functions, so any character
+  // that changes URL STRUCTURE silently truncates or merges screen names.
+  it("keeps a '?' inside the screen name instead of starting a query", () => {
+    const url = buildScreenUrl("com.acme.wallet", "Checkout?coupon=SUMMER");
+    expect(url).toBe("app://com.acme.wallet/Checkout%3Fcoupon=SUMMER");
+    expect(new URL(url).pathname).toBe("/Checkout%3Fcoupon=SUMMER");
+    expect(new URL(url).search).toBe("");
+  });
+
+  it("keeps a '#' inside the screen name instead of starting a fragment", () => {
+    const url = buildScreenUrl("com.acme.wallet", "Order#123");
+    expect(new URL(url).hash).toBe("");
+    expect(new URL(url).pathname).toBe("/Order%23123");
+  });
+
+  it("passes dot segments through verbatim", () => {
+    // Deliberately NOT encoded: the URL spec decodes %2E before resolving path
+    // segments, so a JS `new URL()` collapses "a/../Admin" to "/Admin" either
+    // way. The ingestion pipeline uses ClickHouse's path(), which does no
+    // dot-segment normalisation, so the raw string is what matters here.
+    expect(buildScreenUrl("com.acme.wallet", "a/../Admin")).toBe(
+      "app://com.acme.wallet/a/../Admin",
+    );
+  });
+
+  it("still treats '/' as a real path separator for router-style names", () => {
+    const url = buildScreenUrl("com.acme.wallet", "/tabs/leaderboard");
+    expect(url).toBe("app://com.acme.wallet/tabs/leaderboard");
+    expect(new URL(url).pathname).toBe("/tabs/leaderboard");
+  });
+
+  it("leaves ordinary names untouched", () => {
+    expect(buildScreenUrl("com.acme.wallet", "Home")).toBe(
+      "app://com.acme.wallet/Home",
+    );
+  });
+});
+
+describe("buildScreenUrl encoding is injective", () => {
+  // Encoding '?' as %3F without first escaping '%' would make a screen named
+  // "Checkout%3Fx" indistinguishable from "Checkout?x", silently merging two
+  // distinct screens in the analytics.
+  it("does not collide a literal %3F with an encoded ?", () => {
+    const fromQuestionMark = buildScreenUrl("com.acme.wallet", "Checkout?x");
+    const fromLiteral = buildScreenUrl("com.acme.wallet", "Checkout%3Fx");
+    expect(fromQuestionMark).not.toBe(fromLiteral);
+    expect(fromQuestionMark).toBe("app://com.acme.wallet/Checkout%3Fx");
+    expect(fromLiteral).toBe("app://com.acme.wallet/Checkout%253Fx");
+  });
+
+  it("does not collide a literal %23 with an encoded #", () => {
+    expect(buildScreenUrl("com.acme.wallet", "Order#1")).not.toBe(
+      buildScreenUrl("com.acme.wallet", "Order%231"),
+    );
+  });
+
+  it("keeps distinct names distinct across a mixed set", () => {
+    const names = ["Home", "Home?x", "Home%3Fx", "Home#y", "Home%23y", "a/b", "a%2Fb"];
+    const urls = names.map((n) => buildScreenUrl("com.acme.wallet", n));
+    expect(new Set(urls).size).toBe(names.length);
+  });
+});
