@@ -91,8 +91,8 @@ importers:
         specifier: ^10.3.0
         version: 10.7.0
       expo-application:
-        specifier: ^55.0.15
-        version: 55.0.16(expo@57.0.4)
+        specifier: ^57.0.2
+        version: 57.0.2(expo@57.0.4)
       expo-device:
         specifier: ^57.0.1
         version: 57.0.1(expo@57.0.4)
@@ -2266,8 +2266,8 @@ packages:
     resolution: {integrity: sha512-PMARsyh/JtqC20HoGqlFcIlQAyqUtW4PlI1rup1uhYJtKuwAjbvWi3GQMAn+STdHum/dk8xrKfUM1+5SAwpolA==}
     engines: {node: ^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0}
 
-  expo-application@55.0.16:
-    resolution: {integrity: sha512-/glsoxbNqhPItIFPBqSDNHihrHlSqJ3guYvAdEDFKcAXJ0iNhfGa8Xdk5+R7KBogmfHouqtsS5bHE7I2qbzKrw==}
+  expo-application@57.0.2:
+    resolution: {integrity: sha512-q31YwcXyymviAmdrtDfAg3Dld4VMxLCNAfgMHip7vZpPX4lzF/AfwsywqBJUAjQnJknzaNAkzqvMVjO5XmKYDA==}
     peerDependencies:
       expo: '*'
 
@@ -6707,7 +6707,7 @@ snapshots:
       jest-mock: 30.4.1
       jest-util: 30.4.1
 
-  expo-application@55.0.16(expo@57.0.4):
+  expo-application@57.0.2(expo@57.0.4):
     dependencies:
       expo: 57.0.4(@babel/core@7.29.7)(@expo/dom-webview@57.0.0)(react-native@0.86.0(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.7))(react@19.2.7)(typescript@6.0.3)
 
