@@ -164,6 +164,10 @@ export function buildScreenUrl(bundleId: string, name: string): string {
     // rest silently dropped from the screen name. '/' is deliberately NOT
     // encoded — router-style names like "/tabs/leaderboard" are meant to be
     // path segments.
+    // '%' FIRST, so the transform stays injective. Without it a screen literally
+    // named "Checkout%3Fx" and one named "Checkout?x" both produce
+    // ".../Checkout%3Fx" and two distinct screens merge in the analytics.
+    .replace(/%/g, "%25")
     .replace(/\?/g, "%3F")
     .replace(/#/g, "%23");
   return `app://${bundleId ?? ""}/${screen}`;

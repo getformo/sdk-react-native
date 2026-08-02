@@ -165,3 +165,28 @@ describe("buildScreenUrl structural characters", () => {
     );
   });
 });
+
+describe("buildScreenUrl encoding is injective", () => {
+  // Encoding '?' as %3F without first escaping '%' would make a screen named
+  // "Checkout%3Fx" indistinguishable from "Checkout?x", silently merging two
+  // distinct screens in the analytics.
+  it("does not collide a literal %3F with an encoded ?", () => {
+    const fromQuestionMark = buildScreenUrl("com.acme.wallet", "Checkout?x");
+    const fromLiteral = buildScreenUrl("com.acme.wallet", "Checkout%3Fx");
+    expect(fromQuestionMark).not.toBe(fromLiteral);
+    expect(fromQuestionMark).toBe("app://com.acme.wallet/Checkout%3Fx");
+    expect(fromLiteral).toBe("app://com.acme.wallet/Checkout%253Fx");
+  });
+
+  it("does not collide a literal %23 with an encoded #", () => {
+    expect(buildScreenUrl("com.acme.wallet", "Order#1")).not.toBe(
+      buildScreenUrl("com.acme.wallet", "Order%231"),
+    );
+  });
+
+  it("keeps distinct names distinct across a mixed set", () => {
+    const names = ["Home", "Home?x", "Home%3Fx", "Home#y", "Home%23y", "a/b", "a%2Fb"];
+    const urls = names.map((n) => buildScreenUrl("com.acme.wallet", n));
+    expect(new Set(urls).size).toBe(names.length);
+  });
+});
