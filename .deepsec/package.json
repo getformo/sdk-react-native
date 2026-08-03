@@ -6,7 +6,19 @@
   "type": "module",
   "workspaces": [],
   "packageManager": "pnpm@9.15.4",
+  "pnpm": {
+    "overrides": {
+      "fast-uri": ">=3.1.4 <4",
+      "hono": ">=4.12.27",
+      "@hono/node-server": ">=2.0.5",
+      "undici": ">=7.28.0 <8",
+      "tar": ">=7.5.21",
+      "qs": ">=6.15.2",
+      "body-parser": ">=2.3.0",
+      "brace-expansion@>=3": ">=5.0.8"
+    }
+  },
   "dependencies": {
-    "deepsec": "^2.0.8"
+    "deepsec": "^2.2.9"
   }
 }
