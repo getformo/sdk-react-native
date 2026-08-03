@@ -44,7 +44,10 @@ overrides:
   'brace-expansion@2': '>=2.0.3 <3'
   'brace-expansion@5': '>=5.0.6 <6'
   'fast-xml-parser': '>=4.5.5'
-  'js-yaml@3': '>=3.15.0'
+  # Cap at <4: uncapped this resolved to js-yaml 5.2.1, which is itself
+  # vulnerable (GHSA-pm4m-ph32-ghv5, fixed in 5.2.2). 3.15.0 patches the 3.x
+  # advisories while keeping the safeLoad-era API the dependents expect.
+  'js-yaml@3': '>=3.15.0 <4'
   'minimatch@3': '>=3.1.5 <4'
   'minimatch@5': '>=5.1.9 <6'
   'minimatch@9': '>=9.0.9 <10'
@@ -63,9 +66,17 @@ overrides:
   'uuid': '>=11.0.0'
   'ws@6': '>=6.2.4'
   'ws@7': '>=7.5.11'
-  'ws@8': '>=8.21.0'
+  'ws@8': '>=8.21.1'
   'yaml@1': '>=1.10.3 <2'
   'yaml@2': '>=2.8.3 <3'
+  # zod 3.x: AIKIDO-2026-10706/-10707 (prototype pollution + missing input
+  # validation, fixed in 4.4.0). The SDK never imports zod; it resolves under
+  # abitype's optional peer (accepts ^3 || ^4) and @expo/cli (dev tooling for
+  # the jest expo mocks — the runnable example app lives in the separate
+  # examples repo). Global on purpose: a scoped abitype>zod override would
+  # leave the flagged zod 3.25.76 resolution in place under @expo/cli.
+  # expo CLI smoke-tested on zod 4 (see PR).
+  'zod': '>=4.4.0 <5'
 
 # Audit policy: ignore advisories that only affect react-native's / wagmi's BUILD
 # tooling (never shipped in the SDK's runtime) and that cannot be cleanly patched.
