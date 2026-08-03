@@ -70,8 +70,12 @@ overrides:
   'yaml@1': '>=1.10.3 <2'
   'yaml@2': '>=2.8.3 <3'
   # zod 3.x: AIKIDO-2026-10706/-10707 (prototype pollution + missing input
-  # validation, fixed in 4.4.0). zod only enters via abitype's optional peer
-  # (nothing here imports it); abitype 1.2.3 accepts ^3 || ^4.
+  # validation, fixed in 4.4.0). The SDK never imports zod; it resolves under
+  # abitype's optional peer (accepts ^3 || ^4) and @expo/cli (dev tooling for
+  # the jest expo mocks — the runnable example app lives in the separate
+  # examples repo). Global on purpose: a scoped abitype>zod override would
+  # leave the flagged zod 3.25.76 resolution in place under @expo/cli.
+  # expo CLI smoke-tested on zod 4 (see PR).
   'zod': '>=4.4.0 <5'
 
 # Audit policy: ignore advisories that only affect react-native's / wagmi's BUILD
