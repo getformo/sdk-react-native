@@ -142,6 +142,76 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("retry after a failed flush", () => {
+    it("re-arms the interval timer when the first-event flush fails", async () => {
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        // The first event flushes immediately. A cold start is exactly when the
+        // radio may still be waking, so this attempt is the one most likely to
+        // fail — and the event it carries is the attribution event.
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(30_000);
+
+        const afterFirstFlush = fetchMock.mock.calls.length;
+        expect(afterFirstFlush).toBeGreaterThan(0);
+
+        // Nothing else is enqueued and the app stays foregrounded. The
+        // re-queued event must still get another attempt.
+        await jest.advanceTimersByTimeAsync(60_000);
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirstFlush);
+
+        queue.clear();
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("keeps retrying until the send finally succeeds", async () => {
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(60_000);
+
+        // Only count what goes out AFTER connectivity returns — fetchMock also
+        // records the failed attempts, whose bodies carry the same event.
+        fetchMock.mockClear();
+        fetchMock.mockResolvedValue({ ok: true, status: 200 });
+        await jest.advanceTimersByTimeAsync(60_000);
+
+        const delivered = fetchMock.mock.calls.flatMap(
+          ([, init]) => JSON.parse(init.body as string) as Array<{ event: string }>
+        );
+        expect(delivered.map((e) => e.event)).toContain("event-1");
+
+        // And the queue is actually drained, not merely re-attempted.
+        fetchMock.mockClear();
+        await jest.advanceTimersByTimeAsync(60_000);
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("consumer callbacks", () => {
     it("does not let a throwing callback escape flush() on an empty queue", async () => {
       const queue = makeQueue();

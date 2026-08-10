@@ -223,22 +223,39 @@ export class EventQueue implements IEventQueue {
       // Flush uses internal mutex to serialize operations
       this.flush().catch((error) => {
         logger.error("EventQueue: Failed to flush on threshold", error);
+        // A failed flush puts its items back on the queue, and this path
+        // returns without arming the interval timer. Re-arm, or a cold start
+        // whose immediate flush fails — the likeliest case, since the radio may
+        // still be waking — strands the attribution event until the next
+        // enqueue or a background transition, neither of which is guaranteed.
+        this.scheduleFlush();
       });
       return;
     }
 
-    if (this.flushIntervalMs && !this.timer) {
+    this.scheduleFlush();
+  }
+
+  /**
+   * Arm the batch-interval timer, if there is queued work and nothing is
+   * already scheduled. Safe to call repeatedly; it never stacks timers.
+   */
+  private scheduleFlush(): void {
+    if (!this.flushIntervalMs || this.timer || !this.queue.length) return;
+
+    this.timer = setTimeout(() => {
       // flush() rethrows once sendWithRetry is exhausted. Passing it to
       // setTimeout bare left that rejection unhandled, surfacing in the host
       // app as an "Uncaught (in promise)" on every failed interval flush —
       // observed against a 4xx from the events API. The threshold and
       // background paths already log and swallow; this one has to as well.
-      this.timer = setTimeout(() => {
-        this.flush().catch((error) => {
-          logger.error("EventQueue: Failed to flush on interval", error);
-        });
-      }, this.flushIntervalMs);
-    }
+      this.flush().catch((error) => {
+        logger.error("EventQueue: Failed to flush on interval", error);
+        // Keep retrying on the interval so a queue that outlives a transient
+        // outage still drains once connectivity returns.
+        this.scheduleFlush();
+      });
+    }, this.flushIntervalMs);
   }
 
   /**
