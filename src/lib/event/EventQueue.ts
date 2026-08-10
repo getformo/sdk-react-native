@@ -323,6 +323,21 @@ export class EventQueue implements IEventQueue {
    * preventing race conditions with re-queued items on failure.
    */
   async flush(callback?: (...args: unknown[]) => void): Promise<void> {
+    return this.runFlush(callback, false);
+  }
+
+  /**
+   * The flush body. `duringCleanup` marks the calls teardown makes itself, so
+   * they are exempt from the closed check below — every other flush must be
+   * abandoned once teardown has begun. It has to identify the specific call
+   * rather than a window of time, because cleanup spends most of its drain
+   * loop awaiting one of these, and a concurrent flush arriving then would
+   * look internal.
+   */
+  private async runFlush(
+    callback: ((...args: unknown[]) => void) | undefined,
+    duringCleanup: boolean
+  ): Promise<void> {
     callback = callback || noop;
 
     if (this.timer) {
@@ -340,6 +355,16 @@ export class EventQueue implements IEventQueue {
     try {
       // Wait for any previous flush to complete
       await previousMutex;
+
+      // Teardown began while this flush was waiting its turn. The instant the
+      // flush ahead released the mutex it would otherwise splice and send —
+      // before cleanup() had even observed that flush finishing — delivering
+      // events after teardown resolved.
+      if (this.closed && !duringCleanup) {
+        logger.debug("EventQueue: Abandoning flush that outlived cleanup");
+        safeCall(callback);
+        return;
+      }
 
       if (!this.queue.length) {
         safeCall(callback);
@@ -609,7 +634,7 @@ export class EventQueue implements IEventQueue {
         const outcome = await withinDeadline(
           // Settle rather than reject, so only the deadline can win the race
           // on an error and a rejection cannot escape unhandled.
-          this.flush().then(
+          this.runFlush(undefined, true).then(
             () => "flushed" as const,
             (error) => {
               logger.error("EventQueue: Failed to flush during cleanup", error);
@@ -634,12 +659,22 @@ export class EventQueue implements IEventQueue {
         attempts++;
       }
 
-      if (attempts >= maxAttempts && this.queue.length > 0) {
-        this.abandonQueuedEvents("Cleanup safety limit reached");
-      }
-
       if (initialQueueLength > 0) {
         logger.debug(`EventQueue: Cleanup completed, flushed ${initialQueueLength - this.queue.length} events`);
+      }
+
+      // Teardown always ends with an empty, invalidated queue — not only when
+      // the safety limit is hit. Each `break` above (a failed flush, a flush
+      // that did not shrink the queue) otherwise left events behind with the
+      // generation unchanged, and a flush queued behind cleanup's own — a
+      // concurrent public flush(), or a second cleanup() — would then send
+      // them and invoke their callbacks after this call had resolved.
+      if (this.queue.length > 0) {
+        this.abandonQueuedEvents(
+          attempts >= maxAttempts
+            ? "Cleanup safety limit reached"
+            : "Teardown finished with events still queued"
+        );
       }
     } finally {
       if (deadlineTimer) clearTimeout(deadlineTimer);

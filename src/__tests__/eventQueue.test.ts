@@ -719,6 +719,73 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("flush racing cleanup", () => {
+    it("does not let a flush queued behind cleanup send abandoned events", async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseDrain: (value: { ok: boolean; status: number }) => void;
+        // 1st: the first-event flush, succeeds and empties the queue.
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+        // 2nd: the request cleanup's drain loop opens — held so a consumer
+        // flush can queue behind it.
+        fetchMock.mockReturnValueOnce(
+          new Promise((resolve) => {
+            releaseDrain = resolve;
+          })
+        );
+        // Everything after fails retryably, so the drain flush re-queues its
+        // event and cleanup breaks out of the loop instead of emptying it.
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(100);
+
+        const callback = jest.fn();
+        await queue.enqueue(makeEvent(2), callback);
+
+        // Nothing is in flight, so cleanup's wait returns at once and its
+        // drain loop opens the held request.
+        const cleanupPromise = queue.cleanup();
+        await jest.advanceTimersByTimeAsync(10);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        // A consumer flush now queues behind cleanup's own.
+        const racing = queue.flush().catch(() => {});
+
+        // Let the drain flush fail within the deadline and re-queue.
+        releaseDrain!({ ok: false, status: 500 });
+        await jest.advanceTimersByTimeAsync(4_000);
+        await cleanupPromise;
+
+        // Sends and callbacks up to here were on a live instance. Nothing more
+        // may happen now that teardown has resolved.
+        const sendsAtCleanup = fetchMock.mock.calls.length;
+        const callbacksAtCleanup = callback.mock.calls.length;
+
+        await jest.advanceTimersByTimeAsync(30_000);
+        await racing;
+
+        // The racing flush takes the mutex the instant cleanup's drain flush
+        // releases it — before cleanup() has even observed that failure — so
+        // measuring only after cleanup() resolves would miss its send. Assert
+        // the absolute count instead: 1 first-event send, then the drain
+        // flush's attempt and its one retry. The racing flush must add none.
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(sendsAtCleanup).toBe(3);
+        expect(callbacksAtCleanup).toBe(callback.mock.calls.length);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();
