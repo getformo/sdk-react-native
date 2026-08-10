@@ -212,6 +212,109 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("permanent send failures", () => {
+    it("stops re-posting a batch the API rejected permanently", async () => {
+      jest.useFakeTimers();
+      try {
+        // 400: an invalid write key or malformed payload. shouldRetry() is
+        // false, so sendWithRetry rejects without retrying.
+        fetchMock.mockResolvedValue({ ok: false, status: 400 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 3,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(30_000);
+
+        // One attempt, no retries — the status is not retryable.
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        // And it must not be re-posted every interval for the process lifetime.
+        await jest.advanceTimersByTimeAsync(300_000);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("still retries a 429 rather than dropping it", async () => {
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValue({ ok: false, status: 429 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(30_000);
+        const afterFirst = fetchMock.mock.calls.length;
+        expect(afterFirst).toBeGreaterThan(1); // initial + retry
+
+        await jest.advanceTimersByTimeAsync(60_000);
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirst);
+
+        queue.clear();
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe("cleanup", () => {
+    it("waits for an in-flight flush and arms no timer afterwards", async () => {
+      let releaseSend: (value: { ok: boolean; status: number }) => void;
+      const inFlight = new Promise<{ ok: boolean; status: number }>((resolve) => {
+        releaseSend = resolve;
+      });
+      fetchMock.mockReturnValueOnce(inFlight);
+
+      const queue = new EventQueue("test-write-key", {
+        apiHost: "https://events.formo.test",
+        flushAt: 20,
+        flushInterval: 10_000,
+        retryCount: 0,
+      });
+
+      // The first event flushes immediately; its items are spliced out of the
+      // queue, so a naive cleanup would see an empty queue and return early.
+      await queue.enqueue(makeEvent(1));
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      let cleanupDone = false;
+      const cleanup = queue.cleanup().then(() => {
+        cleanupDone = true;
+      });
+
+      await settle();
+      expect(cleanupDone).toBe(false); // still waiting on the in-flight send
+
+      // Fail it, so the items are re-queued during teardown.
+      releaseSend!({ ok: false, status: 500 });
+      await cleanup;
+      expect(cleanupDone).toBe(true);
+
+      // No timer may survive teardown and fire network calls afterwards.
+      const callsAtCleanup = fetchMock.mock.calls.length;
+      jest.useFakeTimers();
+      try {
+        await jest.advanceTimersByTimeAsync(300_000);
+        expect(fetchMock.mock.calls.length).toBe(callsAtCleanup);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("consumer callbacks", () => {
     it("does not let a throwing callback escape flush() on an empty queue", async () => {
       const queue = makeQueue();

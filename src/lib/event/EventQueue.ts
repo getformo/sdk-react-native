@@ -22,6 +22,15 @@ type IFormoEventFlushPayload = IFormoEventPayload & {
   sent_at: string;
 };
 
+/**
+ * A send failure tagged with whether another attempt could ever succeed.
+ * `retryable: false` means the API rejected the payload itself (4xx other
+ * than 429) — re-posting the identical batch will fail identically forever.
+ * Left undefined for unexpected errors, which are treated as retryable so an
+ * unrecognised fault never silently discards events.
+ */
+type SendError = Error & { retryable?: boolean };
+
 interface Options {
   apiHost: string;
   flushAt?: number;
@@ -86,6 +95,12 @@ export class EventQueue implements IEventQueue {
    * app switcher, an OS memory kill, or a crash never gives us that chance.
    */
   private flushed = false;
+  /**
+   * Set once cleanup starts. A flush already in flight can fail and re-queue
+   * its items after teardown has begun; without this it would arm a timer on
+   * an instance that is going away, firing network calls post-cleanup.
+   */
+  private closed = false;
 
   constructor(writeKey: string, options: Options) {
     this.writeKey = writeKey;
@@ -241,6 +256,7 @@ export class EventQueue implements IEventQueue {
    * already scheduled. Safe to call repeatedly; it never stacks timers.
    */
   private scheduleFlush(): void {
+    if (this.closed) return;
     if (!this.flushIntervalMs || this.timer || !this.queue.length) return;
 
     this.timer = setTimeout(() => {
@@ -309,6 +325,21 @@ export class EventQueue implements IEventQueue {
         done();
         logger.info(`Events sent successfully: ${data.length} events`);
       } catch (err) {
+        if ((err as SendError)?.retryable === false) {
+          // The API rejected this payload itself, so the identical batch can
+          // never succeed. Keeping it queued would re-post it every interval
+          // forever, re-invoking callbacks and burning the user's battery and
+          // data. Drop it, and release the hashes so equivalent events are not
+          // blocked from being enqueued again later. The web SDK likewise does
+          // not re-queue a failed batch.
+          items.forEach((item) => this.payloadHashes.delete(item.hash));
+          done(err as Error);
+          logger.error(
+            `Dropping ${items.length} event(s), permanently rejected by the API:`,
+            err
+          );
+          throw err;
+        }
         // Re-add items to the front of the queue for retry on next flush
         // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
         // events from being enqueued while these items are pending retry.
@@ -343,14 +374,25 @@ export class EventQueue implements IEventQueue {
           await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
           return this.sendWithRetry(data, attempt + 1);
         }
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const error: SendError = new Error(
+          `HTTP error! status: ${response.status}`
+        );
+        // A 4xx that is not 429 rejects this payload permanently — an invalid
+        // write key or a malformed batch. Tag it so flush() drops the batch
+        // instead of re-posting it on every interval for the process lifetime.
+        error.retryable = shouldRetry;
+        throw error;
       }
     } catch (error) {
-      if (isNetworkError(error) && attempt < this.retryCount) {
-        const delay = Math.pow(2, attempt) * 1000;
-        logger.warn(`Network error, retrying in ${delay}ms...`);
-        await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
-        return this.sendWithRetry(data, attempt + 1);
+      if (isNetworkError(error)) {
+        if (attempt < this.retryCount) {
+          const delay = Math.pow(2, attempt) * 1000;
+          logger.warn(`Network error, retrying in ${delay}ms...`);
+          await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
+          return this.sendWithRetry(data, attempt + 1);
+        }
+        // Connectivity comes back; keep these for a later attempt.
+        (error as SendError).retryable = true;
       }
       throw error;
     }
@@ -385,6 +427,20 @@ export class EventQueue implements IEventQueue {
    * Clean up resources, flushing any pending events first
    */
   public async cleanup(): Promise<void> {
+    // Stop anything from arming a new timer for the rest of teardown.
+    this.closed = true;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    // A flush may already be in flight with its items spliced out of the
+    // queue, which would make the drain loop below see an empty queue and
+    // return before delivery finished. Wait for it to settle first — on a
+    // transient failure it puts those items back, and the loop then retries
+    // them. The mutex always resolves, including on a failed send.
+    await this.flushMutex;
+
     // Flush all remaining queued events before teardown
     // Loop until queue is empty since flush() only sends flushAt events per call
     // Safety limit prevents infinite loops if flush silently fails
