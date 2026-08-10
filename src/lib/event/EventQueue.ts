@@ -358,6 +358,13 @@ export class EventQueue implements IEventQueue {
       }));
 
       const done = (err?: Error) => {
+        // A batch cleanup() abandoned must not call back into an app that has
+        // already torn the SDK down: its request has no timeout, so it can
+        // settle long after cleanup() resolved and the provider moved on to a
+        // replacement instance. A plain clear() (opt-out) still notifies, so
+        // the consumer does learn those events were dropped.
+        if (this.closed && this.generation !== generation) return;
+
         items.forEach(({ message, callback: itemCallback }) =>
           safeCall(itemCallback, err, message, data)
         );

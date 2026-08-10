@@ -621,9 +621,10 @@ describe("EventQueue", () => {
         releaseStall!({ ok: false, status: 500 });
         await jest.advanceTimersByTimeAsync(60_000);
 
-        // A reports the failure once. A second invocation means B resurrected
+        // Nothing may call back into a torn-down instance: A's batch was
+        // abandoned by cleanup, and any invocation here means B resurrected
         // the event and sent it after teardown had already completed.
-        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback).not.toHaveBeenCalled();
       } finally {
         jest.useRealTimers();
       }
@@ -668,6 +669,50 @@ describe("EventQueue", () => {
         await jest.advanceTimersByTimeAsync(10_000);
         await cleanup;
         expect(done).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe("callbacks after an abandoned teardown", () => {
+    it("does not invoke callbacks when the abandoned request finally settles", async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseStall: (value: { ok: boolean; status: number }) => void;
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+        fetchMock.mockReturnValue(
+          new Promise((resolve) => {
+            releaseStall = resolve;
+          })
+        );
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(100);
+
+        // Queued with a callback, no request in flight.
+        const callback = jest.fn();
+        await queue.enqueue(makeEvent(2), callback);
+
+        // The drain loop opens a request for it, which stalls past the
+        // deadline; teardown abandons it and returns.
+        const cleanup = queue.cleanup();
+        await jest.advanceTimersByTimeAsync(10_000);
+        await cleanup;
+        expect(callback).not.toHaveBeenCalled();
+
+        // The abandoned request settles long afterwards. The app has already
+        // torn the SDK down, so nothing may call back into it.
+        releaseStall!({ ok: true, status: 200 });
+        await jest.advanceTimersByTimeAsync(60_000);
+        expect(callback).not.toHaveBeenCalled();
       } finally {
         jest.useRealTimers();
       }
