@@ -49,6 +49,19 @@ const MIN_FLUSH_INTERVAL = 1_000 * 10; // 10 seconds
 const noop = () => {};
 
 /**
+ * Invoke a consumer-supplied callback without letting it escape the SDK.
+ * These callbacks are arbitrary app code; a throw from one must not surface
+ * as an unhandled rejection from flush() or abort the remaining callbacks.
+ */
+const safeCall = (fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
+  try {
+    fn(...args);
+  } catch (error) {
+    logger.error("EventQueue: Callback threw, ignoring", error);
+  }
+};
+
+/**
  * Event queue for React Native
  * Handles batching, flushing, and retries with app lifecycle awareness
  */
@@ -64,6 +77,15 @@ export class EventQueue implements IEventQueue {
   private payloadHashes: Set<string> = new Set();
   private flushMutex: Promise<void> = Promise.resolve();
   private appStateSubscription: { remove: () => void } | null = null;
+  /**
+   * Whether anything has been flushed yet this app session. Starts false so
+   * the first event is sent immediately (see enqueue). A cold start opened
+   * from an ad click or deep link produces its attribution events right away,
+   * and those are exactly the events lost if the process is killed before the
+   * batch timer fires or AppState reports background — a force-quit from the
+   * app switcher, an OS memory kill, or a crash never gives us that chance.
+   */
+  private flushed = false;
 
   constructor(writeKey: string, options: Options) {
     this.writeKey = writeKey;
@@ -189,12 +211,15 @@ export class EventQueue implements IEventQueue {
         0
       ) >= this.maxQueueSize;
 
-    if (hasReachedFlushAt || hasReachedQueueSize) {
+    // Ship the first event of the app session as a batch of one rather than
+    // holding it for flushAt/flushInterval; subsequent events keep batching.
+    if (hasReachedFlushAt || hasReachedQueueSize || !this.flushed) {
       // Clear timer to prevent double flush
       if (this.timer) {
         clearTimeout(this.timer);
         this.timer = null;
       }
+      this.flushed = true;
       // Flush uses internal mutex to serialize operations
       this.flush().catch((error) => {
         logger.error("EventQueue: Failed to flush on threshold", error);
@@ -203,7 +228,16 @@ export class EventQueue implements IEventQueue {
     }
 
     if (this.flushIntervalMs && !this.timer) {
-      this.timer = setTimeout(this.flush.bind(this), this.flushIntervalMs);
+      // flush() rethrows once sendWithRetry is exhausted. Passing it to
+      // setTimeout bare left that rejection unhandled, surfacing in the host
+      // app as an "Uncaught (in promise)" on every failed interval flush —
+      // observed against a 4xx from the events API. The threshold and
+      // background paths already log and swallow; this one has to as well.
+      this.timer = setTimeout(() => {
+        this.flush().catch((error) => {
+          logger.error("EventQueue: Failed to flush on interval", error);
+        });
+      }, this.flushIntervalMs);
     }
   }
 
@@ -232,7 +266,7 @@ export class EventQueue implements IEventQueue {
       await previousMutex;
 
       if (!this.queue.length) {
-        callback();
+        safeCall(callback);
         return;
       }
 
@@ -246,9 +280,9 @@ export class EventQueue implements IEventQueue {
 
       const done = (err?: Error) => {
         items.forEach(({ message, callback: itemCallback }) =>
-          itemCallback(err, message, data)
+          safeCall(itemCallback, err, message, data)
         );
-        callback!(err, data);
+        safeCall(callback!, err, data);
       };
 
       try {
