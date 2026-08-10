@@ -85,9 +85,23 @@ overrides:
 #   GHSA-4x5r-pxfx-6jf8  @babel/core (LOW)      no patched version published (>=7.29.1 absent)
 #   GHSA-96hv-2xvq-fx4p  ws (HIGH)              one build-tooling ws@8.20.1 resists the >=8.21.0 override
 #   GHSA-h67p-54hq-rp68  js-yaml (MODERATE)     the only 4.x fix is a breaking major bump (5.x)
+#   GHSA-w3rx-r6r6-pgpr  image-size (HIGH)      no patched version published (see below)
+#   GHSA-5p2g-fcmc-qvqq  image-size (HIGH)      no patched version published (see below)
+#
+# image-size: both advisories name ">=2.0.3" as the patched range, but 2.0.3 has
+# never been published — npm's latest is 2.0.2, which is itself inside the
+# vulnerable "<=2.0.2" range. An override is therefore unresolvable, and there is
+# no fix to take, breaking or otherwise. It reaches the graph only as
+# metro > image-size (metro pins ^1.0.2; 1.2.1 resolves), i.e. the asset pipeline
+# of the bundler, which is build tooling and never ships in the SDK's runtime
+# output. Both advisories are decode-time infinite loops on malformed ICNS/JXL/
+# HEIF input, so exposure would require bundling a hostile image at build time.
+# Drop these two entries as soon as a patched image-size is published.
 # Revisit as upstream (react-native / metro / viem) updates these transitive deps.
 auditConfig:
   ignoreGhsas:
     - GHSA-4x5r-pxfx-6jf8
     - GHSA-96hv-2xvq-fx4p
     - GHSA-h67p-54hq-rp68
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq
