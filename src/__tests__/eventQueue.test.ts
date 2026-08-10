@@ -831,6 +831,60 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("cleanup robustness", () => {
+    it("still settles, and empties the queue, if teardown throws", async () => {
+      const { AppState } = jest.requireMock("react-native") as {
+        AppState: { addEventListener: jest.Mock };
+      };
+      AppState.addEventListener.mockReturnValueOnce({
+        remove: () => {
+          throw new Error("native module gone");
+        },
+      });
+
+      const queue = makeQueue();
+      const callback = jest.fn();
+      await queue.enqueue(makeEvent(1), callback);
+      await settle();
+
+      // Must resolve rather than reject, and must not poison later calls.
+      await expect(queue.cleanup()).resolves.toBeUndefined();
+      await expect(queue.cleanup()).resolves.toBeUndefined();
+
+      fetchMock.mockClear();
+      await queue.flush();
+      await settle();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not invoke a flush callback after teardown", async () => {
+      let releaseStall: (value: { ok: boolean; status: number }) => void;
+      fetchMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseStall = resolve;
+        })
+      );
+
+      const queue = makeQueue();
+      await queue.enqueue(makeEvent(1));
+      await settle();
+
+      // A consumer flush queued behind the stalled one.
+      const flushCallback = jest.fn();
+      const racing = queue.flush(flushCallback);
+
+      await queue.cleanup();
+      expect(flushCallback).not.toHaveBeenCalled();
+
+      // The stalled send settles long after teardown; the queued flush then
+      // resumes and must not call back into the instance.
+      releaseStall!({ ok: true, status: 200 });
+      await racing;
+      await settle();
+      expect(flushCallback).not.toHaveBeenCalled();
+    }, 20_000);
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();

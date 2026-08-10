@@ -368,8 +368,11 @@ export class EventQueue implements IEventQueue {
       // before cleanup() had even observed that flush finishing — delivering
       // events after teardown resolved.
       if (this.closed && !duringCleanup) {
+        // Deliberately no callback: this resumes only once the flush ahead
+        // settles, which can be long after cleanup() resolved, and nothing may
+        // call back into a torn-down instance. The returned promise still
+        // resolves, so an awaiting caller is never left hanging.
         logger.debug("EventQueue: Abandoning flush that outlived cleanup");
-        safeCall(callback);
         return;
       }
 
@@ -579,7 +582,16 @@ export class EventQueue implements IEventQueue {
     // Teardown is idempotent: a caller that asks twice joins the run already
     // under way rather than starting a competing one.
     if (!this.cleanupPromise) {
-      this.cleanupPromise = this.runCleanup();
+      // Teardown is best-effort and must always settle: a rejection here would
+      // be memoised, so every later cleanup() would return the same rejected
+      // promise and never retry — and the provider, which awaits the pending
+      // cleanup before building a replacement, would reject with it forever.
+      this.cleanupPromise = this.runCleanup().catch((error) => {
+        logger.error("EventQueue: Cleanup failed", error);
+        // Whatever failed, the instance is going away: make sure nothing is
+        // left queued for a straggling flush to pick up.
+        this.clear();
+      });
     }
     return this.cleanupPromise;
   }
@@ -597,7 +609,13 @@ export class EventQueue implements IEventQueue {
     // outlives cleanup(). The closed check in the handler covers the same
     // window; removing the listener means the event never reaches it at all.
     if (this.appStateSubscription) {
-      this.appStateSubscription.remove();
+      try {
+        this.appStateSubscription.remove();
+      } catch (error) {
+        // A native-module failure here must not abort teardown before the
+        // queue has been drained or invalidated below.
+        logger.error("EventQueue: Failed to remove AppState listener", error);
+      }
       this.appStateSubscription = null;
     }
 
