@@ -6,13 +6,27 @@
 import { logger } from "../lib/logger";
 import { storage } from "../lib/storage";
 import { SESSION_TRAFFIC_SOURCE_KEY } from "../constants";
+import { sanitizeTrafficSources } from "./sanitize";
 import type { ITrafficSource } from "../types";
 
 /**
  * Parse UTM parameters and referral info from URL
  * Supports both web URLs (https://) and deep link URLs (myapp://)
+ *
+ * Every return path is sanitized (see ./sanitize) so scanner-injected or
+ * hand-crafted payloads in a deep link can never be persisted or reported.
  */
 export function parseTrafficSource(
+  url: string,
+  customRefParams?: string[],
+  pathPattern?: string
+): Partial<ITrafficSource> {
+  return sanitizeTrafficSources(
+    extractTrafficSource(url, customRefParams, pathPattern)
+  );
+}
+
+function extractTrafficSource(
   url: string,
   customRefParams?: string[],
   pathPattern?: string
@@ -112,7 +126,11 @@ export function getStoredTrafficSource(): Partial<ITrafficSource> | undefined {
   try {
     const stored = storage().get(SESSION_TRAFFIC_SOURCE_KEY);
     if (stored && typeof stored === "string") {
-      return JSON.parse(stored) as Partial<ITrafficSource>;
+      // Sanitize on the way out too, so values persisted by a pre-sanitization
+      // SDK version are flushed rather than replayed onto every event.
+      return sanitizeTrafficSources(
+        JSON.parse(stored) as Partial<ITrafficSource>
+      );
     }
   } catch (error) {
     logger.debug("Failed to get stored traffic source:", error);
