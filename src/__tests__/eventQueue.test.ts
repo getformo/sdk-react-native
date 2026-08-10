@@ -582,6 +582,54 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("cleanup abandoning a stalled batch", () => {
+    it("does not let a stalled flush resurrect and resend its events", async () => {
+      jest.useFakeTimers();
+      try {
+        let releaseStall: (value: { ok: boolean; status: number }) => void;
+        fetchMock.mockReturnValueOnce(
+          new Promise((resolve) => {
+            releaseStall = resolve;
+          })
+        );
+        // Everything after the stall fails retryably, so the stalled flush
+        // exhausts its retries and takes the re-queue path.
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 1,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        // Flush A splices event 1 and stalls mid-send.
+        const callback = jest.fn();
+        await queue.enqueue(makeEvent(1), callback);
+        await jest.advanceTimersByTimeAsync(100);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        // Flush B is queued behind A, waiting on its mutex.
+        await queue.enqueue(makeEvent(2));
+
+        // Teardown gives up on A after the bound and returns.
+        const cleanup = queue.cleanup();
+        await jest.advanceTimersByTimeAsync(10_000);
+        await cleanup;
+
+        // A only now fails. It must not put event 1 back for B to send.
+        releaseStall!({ ok: false, status: 500 });
+        await jest.advanceTimersByTimeAsync(60_000);
+
+        // A reports the failure once. A second invocation means B resurrected
+        // the event and sent it after teardown had already completed.
+        expect(callback).toHaveBeenCalledTimes(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();

@@ -577,8 +577,14 @@ export class EventQueue implements IEventQueue {
           CLEANUP_FLUSH_WAIT
         )}s, abandoning ${this.queue.length} event(s)`
       );
-      this.queue = [];
-      this.payloadHashes.clear();
+      // clear() rather than emptying the queue by hand: it also bumps the
+      // generation, which is what actually invalidates the stalled batch. That
+      // batch still holds its items, and a flush chained behind it is still
+      // waiting on its mutex. Without the bump, the stalled flush would later
+      // fail, unshift its items back onto the queue we just emptied, and the
+      // chained flush would then send them and invoke their callbacks a second
+      // time — after teardown had already returned.
+      this.clear();
       return;
     }
 
@@ -612,8 +618,9 @@ export class EventQueue implements IEventQueue {
       logger.warn(
         `EventQueue: Cleanup safety limit reached. Discarding ${this.queue.length} events.`
       );
-      this.queue = [];
-      this.payloadHashes.clear();
+      // Same reasoning as the timeout path above: bump the generation so a
+      // flush still holding these items cannot put them back after teardown.
+      this.clear();
     }
 
     if (initialQueueLength > 0) {
