@@ -517,22 +517,20 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
-   * Wait for an in-flight flush to settle, giving up after CLEANUP_FLUSH_WAIT.
-   * Returns whether it settled. The timer is always cleared, so a prompt
-   * settle does not leave one pending.
+   * Give up on the events still queued at teardown, and make sure a send that
+   * is still holding a batch cannot put them back.
    */
-  private async awaitInFlightFlush(): Promise<boolean> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        this.flushMutex.then(() => true),
-        new Promise<boolean>((resolve) => {
-          timer = setTimeout(() => resolve(false), CLEANUP_FLUSH_WAIT);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+  private abandonQueuedEvents(reason: string): void {
+    logger.warn(
+      `EventQueue: ${reason}, abandoning ${this.queue.length} event(s)`
+    );
+    // clear() rather than emptying the queue by hand: it also bumps the
+    // generation, which is what actually invalidates a batch a stalled flush
+    // is still holding. Without the bump that flush would later fail, unshift
+    // its items back onto the queue we just emptied, and a flush chained
+    // behind it would send them and invoke their callbacks a second time —
+    // after teardown had already returned.
+    this.clear();
   }
 
   /**
@@ -555,85 +553,98 @@ export class EventQueue implements IEventQueue {
       this.appStateSubscription = null;
     }
 
-    // A flush may already be in flight with its items spliced out of the
-    // queue, which would make the drain loop below see an empty queue and
-    // return before delivery finished. Wait for it to settle first — on a
-    // transient failure it puts those items back, and the loop then retries
-    // them.
+    // One deadline for the whole of teardown, not per wait.
     //
-    // Bounded, because the mutex only resolves once the send settles and
-    // `fetch` here has no request timeout: a stalled connection would
-    // otherwise hang cleanup() forever, and FormoAnalyticsProvider awaits the
-    // pending cleanup before building a replacement instance, so the SDK could
-    // never be reconfigured again.
-    const settled = await this.awaitInFlightFlush();
+    // `fetch` here has no request timeout, so any send this method waits on —
+    // a flush already in flight, or one the drain loop starts itself — can
+    // stall forever. Bounding only the first would leave the ordinary case
+    // unbounded: with nothing in flight the first wait returns immediately and
+    // the drain loop then opens a fresh request. A single deadline also keeps
+    // total teardown bounded rather than 5s per flush attempt.
+    //
+    // This matters beyond a stuck cleanup(): FormoAnalyticsProvider awaits the
+    // pending cleanup before constructing a replacement instance, so a hang
+    // here means the SDK can never be reconfigured again.
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<"timeout">((resolve) => {
+      deadlineTimer = setTimeout(() => resolve("timeout"), CLEANUP_FLUSH_WAIT);
+    });
+    const withinDeadline = <T>(work: Promise<T>) =>
+      Promise.race([work, deadline]);
+    const timedOut = `Teardown exceeded ${millisecondsToSecond(
+      CLEANUP_FLUSH_WAIT
+    )}s`;
 
-    if (!settled) {
-      // The drain loop cannot help here: flush() awaits the same stalled
-      // mutex, so it would hang exactly as this wait just did. Give up the
-      // queued events rather than the teardown.
-      logger.warn(
-        `EventQueue: In-flight flush did not settle within ${millisecondsToSecond(
-          CLEANUP_FLUSH_WAIT
-        )}s, abandoning ${this.queue.length} event(s)`
-      );
-      // clear() rather than emptying the queue by hand: it also bumps the
-      // generation, which is what actually invalidates the stalled batch. That
-      // batch still holds its items, and a flush chained behind it is still
-      // waiting on its mutex. Without the bump, the stalled flush would later
-      // fail, unshift its items back onto the queue we just emptied, and the
-      // chained flush would then send them and invoke their callbacks a second
-      // time — after teardown had already returned.
-      this.clear();
-      return;
-    }
+    try {
+      // A flush may already be in flight with its items spliced out of the
+      // queue, which would make the drain loop below see an empty queue and
+      // return before delivery finished. Wait for it to settle first — on a
+      // transient failure it puts those items back, and the loop then retries
+      // them.
+      if (
+        (await withinDeadline(this.flushMutex.then(() => "settled" as const))) ===
+        "timeout"
+      ) {
+        this.abandonQueuedEvents(timedOut);
+        return;
+      }
 
-    // Flush all remaining queued events before teardown
-    // Loop until queue is empty since flush() only sends flushAt events per call
-    // Safety limit prevents infinite loops if flush silently fails
-    const maxAttempts = Math.ceil(this.queue.length / this.flushAt) + 3;
-    let attempts = 0;
-    const initialQueueLength = this.queue.length;
+      // Flush all remaining queued events before teardown
+      // Loop until queue is empty since flush() only sends flushAt events per call
+      // Safety limit prevents infinite loops if flush silently fails
+      const maxAttempts = Math.ceil(this.queue.length / this.flushAt) + 3;
+      let attempts = 0;
+      const initialQueueLength = this.queue.length;
 
-    while (this.queue.length > 0 && attempts < maxAttempts) {
-      const queueLengthBefore = this.queue.length;
-      try {
-        await this.flush();
-      } catch (error) {
-        logger.error("EventQueue: Failed to flush during cleanup", error);
+      while (this.queue.length > 0 && attempts < maxAttempts) {
+        const queueLengthBefore = this.queue.length;
+
+        const outcome = await withinDeadline(
+          // Settle rather than reject, so only the deadline can win the race
+          // on an error and a rejection cannot escape unhandled.
+          this.flush().then(
+            () => "flushed" as const,
+            (error) => {
+              logger.error("EventQueue: Failed to flush during cleanup", error);
+              return "failed" as const;
+            }
+          )
+        );
+
+        if (outcome === "timeout") {
+          this.abandonQueuedEvents(timedOut);
+          return;
+        }
         // Break on error to avoid infinite loop if flush keeps failing
-        break;
+        if (outcome === "failed") break;
+
+        // If queue length didn't decrease, flush is silently failing
+        if (this.queue.length >= queueLengthBefore) {
+          logger.warn("EventQueue: Flush did not reduce queue size, aborting cleanup");
+          break;
+        }
+
+        attempts++;
       }
 
-      // If queue length didn't decrease, flush is silently failing
-      if (this.queue.length >= queueLengthBefore) {
-        logger.warn("EventQueue: Flush did not reduce queue size, aborting cleanup");
-        break;
+      if (attempts >= maxAttempts && this.queue.length > 0) {
+        this.abandonQueuedEvents("Cleanup safety limit reached");
       }
 
-      attempts++;
-    }
+      if (initialQueueLength > 0) {
+        logger.debug(`EventQueue: Cleanup completed, flushed ${initialQueueLength - this.queue.length} events`);
+      }
+    } finally {
+      if (deadlineTimer) clearTimeout(deadlineTimer);
 
-    if (attempts >= maxAttempts && this.queue.length > 0) {
-      logger.warn(
-        `EventQueue: Cleanup safety limit reached. Discarding ${this.queue.length} events.`
-      );
-      // Same reasoning as the timeout path above: bump the generation so a
-      // flush still holding these items cannot put them back after teardown.
-      this.clear();
-    }
-
-    if (initialQueueLength > 0) {
-      logger.debug(`EventQueue: Cleanup completed, flushed ${initialQueueLength - this.queue.length} events`);
-    }
-
-    // The AppState listener was already detached at the top of cleanup, and
-    // `closed` stops anything arming a timer, so nothing can have been
-    // scheduled since. This is the last-resort clear for a timer that a flush
-    // in the drain loop above might have left behind.
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+      // The AppState listener was already detached at the top of cleanup, and
+      // `closed` stops anything arming a timer, so nothing can have been
+      // scheduled since. This is the last-resort clear for a timer that a flush
+      // in the drain loop above might have left behind.
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
     }
   }
 }

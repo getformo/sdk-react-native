@@ -630,6 +630,50 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("cleanup with a stalled drain flush", () => {
+    it("completes when a flush cleanup itself starts never settles", async () => {
+      jest.useFakeTimers();
+      try {
+        // First send succeeds, so nothing is in flight when cleanup begins and
+        // the in-flight wait returns immediately. The stall happens on the
+        // request the drain loop opens.
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+        fetchMock.mockReturnValue(new Promise(() => {}));
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(100);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        // Queue a second event, but do not let its interval fire — it is still
+        // sitting in the queue with no request in flight.
+        await queue.enqueue(makeEvent(2));
+
+        let done = false;
+        const cleanup = queue.cleanup().then(() => {
+          done = true;
+        });
+
+        // The drain loop opens a request for event 2, which never settles.
+        await jest.advanceTimersByTimeAsync(1_000);
+        expect(done).toBe(false);
+
+        // Teardown must still finish once the deadline passes.
+        await jest.advanceTimersByTimeAsync(10_000);
+        await cleanup;
+        expect(done).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();
