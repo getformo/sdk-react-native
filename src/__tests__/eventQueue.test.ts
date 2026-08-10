@@ -543,6 +543,45 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("cleanup with a stalled request", () => {
+    it("completes rather than hanging when the send never settles", async () => {
+      jest.useFakeTimers();
+      try {
+        // A connection that never resolves and never rejects. React Native's
+        // fetch has no request timeout, so nothing else will end this.
+        fetchMock.mockReturnValue(new Promise(() => {}));
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        // The first event flushes immediately and hangs mid-send.
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(100);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        let done = false;
+        const cleanup = queue.cleanup().then(() => {
+          done = true;
+        });
+
+        // Still stuck on the in-flight send.
+        await jest.advanceTimersByTimeAsync(1_000);
+        expect(done).toBe(false);
+
+        // Past the bound, teardown gives up on it and finishes.
+        await jest.advanceTimersByTimeAsync(10_000);
+        await cleanup;
+        expect(done).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();

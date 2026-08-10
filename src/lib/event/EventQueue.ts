@@ -51,6 +51,11 @@ const DEFAULT_QUEUE_SIZE = 1_024 * 500; // 500kB
 const MAX_QUEUE_SIZE = 1_024 * 500; // 500kB
 const MIN_QUEUE_SIZE = 200; // 200 bytes
 
+// How long cleanup() waits for an already-in-flight send before abandoning it.
+// Teardown must finish promptly: the provider blocks re-initialization on the
+// pending cleanup, so an unbounded wait would strand the SDK.
+const CLEANUP_FLUSH_WAIT = 1_000 * 5; // 5 seconds
+
 const DEFAULT_FLUSH_INTERVAL = 1_000 * 30; // 30 seconds
 const MAX_FLUSH_INTERVAL = 1_000 * 300; // 5 minutes
 const MIN_FLUSH_INTERVAL = 1_000 * 10; // 10 seconds
@@ -512,6 +517,25 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
+   * Wait for an in-flight flush to settle, giving up after CLEANUP_FLUSH_WAIT.
+   * Returns whether it settled. The timer is always cleared, so a prompt
+   * settle does not leave one pending.
+   */
+  private async awaitInFlightFlush(): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.flushMutex.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), CLEANUP_FLUSH_WAIT);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * Clean up resources, flushing any pending events first
    */
   public async cleanup(): Promise<void> {
@@ -535,8 +559,28 @@ export class EventQueue implements IEventQueue {
     // queue, which would make the drain loop below see an empty queue and
     // return before delivery finished. Wait for it to settle first — on a
     // transient failure it puts those items back, and the loop then retries
-    // them. The mutex always resolves, including on a failed send.
-    await this.flushMutex;
+    // them.
+    //
+    // Bounded, because the mutex only resolves once the send settles and
+    // `fetch` here has no request timeout: a stalled connection would
+    // otherwise hang cleanup() forever, and FormoAnalyticsProvider awaits the
+    // pending cleanup before building a replacement instance, so the SDK could
+    // never be reconfigured again.
+    const settled = await this.awaitInFlightFlush();
+
+    if (!settled) {
+      // The drain loop cannot help here: flush() awaits the same stalled
+      // mutex, so it would hang exactly as this wait just did. Give up the
+      // queued events rather than the teardown.
+      logger.warn(
+        `EventQueue: In-flight flush did not settle within ${millisecondsToSecond(
+          CLEANUP_FLUSH_WAIT
+        )}s, abandoning ${this.queue.length} event(s)`
+      );
+      this.queue = [];
+      this.payloadHashes.clear();
+      return;
+    }
 
     // Flush all remaining queued events before teardown
     // Loop until queue is empty since flush() only sends flushAt events per call
