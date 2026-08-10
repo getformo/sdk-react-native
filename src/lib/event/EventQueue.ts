@@ -64,7 +64,14 @@ const noop = () => {};
  */
 const safeCall = (fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
   try {
-    fn(...args);
+    const result = fn(...args);
+    // An `async` callback signals failure by returning a rejected promise
+    // rather than throwing, which the catch below would never see.
+    if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+      Promise.resolve(result).catch((error) => {
+        logger.error("EventQueue: Async callback rejected, ignoring", error);
+      });
+    }
   } catch (error) {
     logger.error("EventQueue: Callback threw, ignoring", error);
   }
@@ -101,6 +108,13 @@ export class EventQueue implements IEventQueue {
    * an instance that is going away, firing network calls post-cleanup.
    */
   private closed = false;
+  /**
+   * Bumped by clear(). flush() splices its batch out of the queue before
+   * sending, so a clear() during opt-out cannot see those items; without this
+   * a later send failure would unshift them back and they would be delivered
+   * after consent was withdrawn.
+   */
+  private generation = 0;
 
   constructor(writeKey: string, options: Options) {
     this.writeKey = writeKey;
@@ -144,6 +158,11 @@ export class EventQueue implements IEventQueue {
    * Handle app state changes
    */
   private handleAppStateChange(nextAppState: AppStateStatus): void {
+    // Teardown is already draining the queue. A flush queued here would wait
+    // on the mutex and could run — and re-queue on failure — after cleanup()
+    // has returned, leaving network work with no owner.
+    if (this.closed) return;
+
     // Flush when app goes to background or becomes inactive
     if (nextAppState === "background" || nextAppState === "inactive") {
       logger.debug("EventQueue: App going to background, flushing events");
@@ -181,9 +200,32 @@ export class EventQueue implements IEventQueue {
     event: IFormoEvent,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    if (this.closed) {
+      logger.debug("EventQueue: Ignoring event enqueued after cleanup");
+      return;
+    }
+
     callback = callback || noop;
 
+    const generation = this.generation;
     const message_id = await this.generateMessageId(event);
+
+    // Hashing is async, so cleanup() can complete while this call is suspended
+    // above. Re-check, or a caller that did not await enqueue() would resume
+    // after teardown, push onto a queue nobody will drain, and — if this is the
+    // session's first event — fire a network request on a torn-down instance.
+    if (this.closed) {
+      logger.debug("EventQueue: Ignoring event enqueued after cleanup");
+      return;
+    }
+
+    // Same window, but for opt-out: clear() cannot see an event that has not
+    // reached the queue yet, so an enqueue suspended across it would land
+    // afterwards and be delivered despite consent having been withdrawn.
+    if (this.generation !== generation) {
+      logger.debug("EventQueue: Ignoring event enqueued before opt-out");
+      return;
+    }
 
     // Check for duplicate
     if (this.isDuplicate(message_id)) {
@@ -236,14 +278,11 @@ export class EventQueue implements IEventQueue {
       }
       this.flushed = true;
       // Flush uses internal mutex to serialize operations
+      // A failed flush re-queues its items and re-arms the interval itself, so
+      // a cold start whose immediate flush fails — the likeliest case, since
+      // the radio may still be waking — still retries the attribution event.
       this.flush().catch((error) => {
         logger.error("EventQueue: Failed to flush on threshold", error);
-        // A failed flush puts its items back on the queue, and this path
-        // returns without arming the interval timer. Re-arm, or a cold start
-        // whose immediate flush fails — the likeliest case, since the radio may
-        // still be waking — strands the attribution event until the next
-        // enqueue or a background transition, neither of which is guaranteed.
-        this.scheduleFlush();
       });
       return;
     }
@@ -265,11 +304,10 @@ export class EventQueue implements IEventQueue {
       // app as an "Uncaught (in promise)" on every failed interval flush —
       // observed against a 4xx from the events API. The threshold and
       // background paths already log and swallow; this one has to as well.
+      // flush() re-arms on failure, so a queue that outlives a transient
+      // outage keeps retrying and drains once connectivity returns.
       this.flush().catch((error) => {
         logger.error("EventQueue: Failed to flush on interval", error);
-        // Keep retrying on the interval so a queue that outlives a transient
-        // outage still drains once connectivity returns.
-        this.scheduleFlush();
       });
     }, this.flushIntervalMs);
   }
@@ -304,6 +342,9 @@ export class EventQueue implements IEventQueue {
       }
 
       const items = this.queue.splice(0, this.flushAt);
+      // Snapshot after the splice: from here on these items live only in this
+      // closure, so a clear() cannot reach them and we have to detect it.
+      const generation = this.generation;
 
       const sentAt = new Date().toISOString();
       const data: IFormoEventFlushPayload[] = items.map((item) => ({
@@ -319,13 +360,28 @@ export class EventQueue implements IEventQueue {
       };
 
       try {
-        await this.sendWithRetry(data);
-        // Only remove hashes after successful send
-        items.forEach((item) => this.payloadHashes.delete(item.hash));
+        await this.sendWithRetry(data, generation);
+        // Only remove hashes after successful send, and only if clear() has
+        // not run meanwhile: it already emptied the set, so an identical event
+        // may have been enqueued since and now owns that hash. Deleting it
+        // here would strip the new item's dedup entry and let a duplicate
+        // through.
+        if (this.generation === generation) {
+          items.forEach((item) => this.payloadHashes.delete(item.hash));
+        }
         done();
         logger.info(`Events sent successfully: ${data.length} events`);
       } catch (err) {
-        if ((err as SendError)?.retryable === false) {
+        if (this.generation !== generation) {
+          // clear() ran while this batch was in flight — the consumer opted
+          // out. Putting these back would deliver events after consent was
+          // withdrawn, and clear() already emptied payloadHashes, so a
+          // resurrected item would also no longer be deduped.
+          done(err as Error);
+          logger.debug(
+            `EventQueue: Discarding ${items.length} in-flight event(s) cleared mid-flush`
+          );
+        } else if ((err as SendError)?.retryable === false) {
           // The API rejected this payload itself, so the identical batch can
           // never succeed. Keeping it queued would re-post it every interval
           // forever, re-invoking callbacks and burning the user's battery and
@@ -338,14 +394,21 @@ export class EventQueue implements IEventQueue {
             `Dropping ${items.length} event(s), permanently rejected by the API:`,
             err
           );
-          throw err;
+        } else {
+          // Re-add items to the front of the queue for retry on next flush
+          // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
+          // events from being enqueued while these items are pending retry.
+          this.queue.unshift(...items);
+          done(err as Error);
+          logger.error("Error sending events, re-queued for retry:", err);
         }
-        // Re-add items to the front of the queue for retry on next flush
-        // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
-        // events from being enqueued while these items are pending retry.
-        this.queue.unshift(...items);
-        done(err as Error);
-        logger.error("Error sending events, re-queued for retry:", err);
+
+        // Re-arm here rather than in each caller's catch, so EVERY entry point
+        // is covered — the background AppState flush and a consumer's manual
+        // flush() included. flush() clears the timer on entry, so without this
+        // a failed background flush would re-queue its items and leave nothing
+        // scheduled to retry them. No-ops when the queue is empty or closed.
+        this.scheduleFlush();
         throw err;
       }
     } finally {
@@ -354,10 +417,27 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
+   * Abort a batch whose events were cleared while it sat in retry backoff.
+   * Retries span seconds, so a consumer can opt out between attempts; posting
+   * the next one would deliver events after consent was withdrawn.
+   */
+  private assertNotCleared(generation: number): void {
+    if (this.generation !== generation) {
+      const error: SendError = new Error(
+        "EventQueue: batch cleared during retry backoff"
+      );
+      // Never re-queue: these events were explicitly discarded.
+      error.retryable = false;
+      throw error;
+    }
+  }
+
+  /**
    * Send events with retry logic
    */
   private async sendWithRetry(
     data: IFormoEventFlushPayload[],
+    generation: number,
     attempt = 0
   ): Promise<void> {
     try {
@@ -372,7 +452,8 @@ export class EventQueue implements IEventQueue {
         if (shouldRetry && attempt < this.retryCount) {
           const delay = Math.pow(2, attempt) * 1000;
           await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
-          return this.sendWithRetry(data, attempt + 1);
+          this.assertNotCleared(generation);
+          return this.sendWithRetry(data, generation, attempt + 1);
         }
         const error: SendError = new Error(
           `HTTP error! status: ${response.status}`
@@ -389,7 +470,8 @@ export class EventQueue implements IEventQueue {
           const delay = Math.pow(2, attempt) * 1000;
           logger.warn(`Network error, retrying in ${delay}ms...`);
           await new Promise<void>((resolve) => setTimeout(() => resolve(), delay));
-          return this.sendWithRetry(data, attempt + 1);
+          this.assertNotCleared(generation);
+          return this.sendWithRetry(data, generation, attempt + 1);
         }
         // Connectivity comes back; keep these for a later attempt.
         (error as SendError).retryable = true;
@@ -402,8 +484,11 @@ export class EventQueue implements IEventQueue {
    * Check if error should be retried
    */
   private shouldRetry(status: number): boolean {
-    // Retry on server errors (5xx) and rate limiting (429)
-    return (status >= 500 && status <= 599) || status === 429;
+    // Retry on server errors (5xx), rate limiting (429) and request timeout
+    // (408). 408 matters now that a non-retryable status drops the batch: a
+    // proxy or server timing out a request is transient, and treating it as
+    // permanent would silently lose those events.
+    return (status >= 500 && status <= 599) || status === 429 || status === 408;
   }
 
   /**
@@ -412,6 +497,9 @@ export class EventQueue implements IEventQueue {
    * from being sent after consent is revoked.
    */
   public clear(): void {
+    // Invalidate any batch already in flight so a later send failure cannot
+    // unshift it back onto the queue we are emptying here.
+    this.generation++;
     this.queue = [];
     this.payloadHashes.clear();
 
@@ -432,6 +520,15 @@ export class EventQueue implements IEventQueue {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+
+    // Detach up front rather than at the end: while the drain loop below is
+    // awaiting a send, a backgrounding app would otherwise queue a flush that
+    // outlives cleanup(). The closed check in the handler covers the same
+    // window; removing the listener means the event never reaches it at all.
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
     }
 
     // A flush may already be in flight with its items spliced out of the
@@ -479,14 +576,13 @@ export class EventQueue implements IEventQueue {
       logger.debug(`EventQueue: Cleanup completed, flushed ${initialQueueLength - this.queue.length} events`);
     }
 
+    // The AppState listener was already detached at the top of cleanup, and
+    // `closed` stops anything arming a timer, so nothing can have been
+    // scheduled since. This is the last-resort clear for a timer that a flush
+    // in the drain loop above might have left behind.
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
-    }
-
-    if (this.appStateSubscription) {
-      this.appStateSubscription.remove();
-      this.appStateSubscription = null;
     }
   }
 }

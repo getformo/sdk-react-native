@@ -315,7 +315,304 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("clear() during an in-flight flush", () => {
+    it("does not resurrect events cleared while a batch was in flight", async () => {
+      let releaseSend: (value: { ok: boolean; status: number }) => void;
+      fetchMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseSend = resolve;
+        })
+      );
+
+      const queue = makeQueue();
+      await queue.enqueue(makeEvent(1));
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Opt-out mid-flight. The batch is already spliced out of the queue, so
+      // clear() cannot see it.
+      queue.clear();
+
+      // The send then fails — those events must NOT come back.
+      releaseSend!({ ok: false, status: 500 });
+      await settle();
+
+      const callsAfterClear = fetchMock.mock.calls.length;
+      jest.useFakeTimers();
+      try {
+        await jest.advanceTimersByTimeAsync(300_000);
+        expect(fetchMock.mock.calls.length).toBe(callsAfterClear);
+      } finally {
+        jest.useRealTimers();
+      }
+
+      await queue.cleanup();
+    });
+  });
+
+  describe("background flush", () => {
+    it("re-arms the interval when the background flush fails", async () => {
+      const { AppState } = jest.requireMock("react-native") as {
+        AppState: { addEventListener: jest.Mock };
+      };
+
+      jest.useFakeTimers();
+      try {
+        // Succeed first, so the first-event flush drains the queue and leaves
+        // no timer pending — the background flush below is then the only thing
+        // that can clear one.
+        fetchMock.mockResolvedValue({ ok: true, status: 200 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          // Must be truthy: the constructor treats 0 as "unset" and would
+          // substitute the default of 3, whose backoffs would then be
+          // indistinguishable from a re-armed interval flush.
+          retryCount: 1,
+        });
+
+        // The constructor registers the AppState listener; grab it.
+        const handler = AppState.addEventListener.mock.calls.at(-1)?.[1] as (
+          s: string
+        ) => void;
+        expect(typeof handler).toBe("function");
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(60_000);
+
+        // Queue a second event: this arms the interval timer.
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+        await queue.enqueue(makeEvent(2));
+
+        // Background before that timer fires. flush() clears the timer on
+        // entry, and the send then fails and re-queues the event.
+        handler("background");
+        // Long enough for both attempts and the 1s backoff to finish, but
+        // short of the 10s interval — so any later call can only come from a
+        // timer the failure path armed, not from sendWithRetry.
+        await jest.advanceTimersByTimeAsync(4_000);
+        const afterBackground = fetchMock.mock.calls.length;
+        expect(afterBackground).toBe(3); // 1 first-event + 2 background attempts
+
+        // Nothing else happens — no new event, no foreground, no cleanup. The
+        // re-queued event must still get another attempt. One interval is
+        // enough to prove it; the flush re-arms on each failure, so advancing
+        // much further just spins the retry loop.
+        await jest.advanceTimersByTimeAsync(15_000);
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(afterBackground);
+
+        // Deliberately no cleanup() here. The re-armed flush is mid retry
+        // backoff, sleeping in a fake timer; cleanup() awaits the flush mutex,
+        // which that flush only releases once its backoff fires. Advancing far
+        // enough just re-arms again, so awaiting cleanup would hang. Dropping
+        // the fake timers below discards the pending work instead.
+        queue.clear();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe("background transition during teardown", () => {
+    it("ignores a background flush once cleanup has started", async () => {
+      const { AppState } = jest.requireMock("react-native") as {
+        AppState: { addEventListener: jest.Mock };
+      };
+
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+        const handler = AppState.addEventListener.mock.calls.at(-1)?.[1] as (
+          s: string
+        ) => void;
+
+        // Fail the send so the event survives in the queue through teardown.
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        const cleanupPromise = queue.cleanup();
+        await jest.advanceTimersByTimeAsync(30_000);
+        await cleanupPromise;
+
+        // A backgrounding app after teardown must not start another send.
+        fetchMock.mockClear();
+        handler("background");
+        await jest.advanceTimersByTimeAsync(30_000);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe("clear() during retry backoff", () => {
+    it("abandons a batch cleared between retry attempts", async () => {
+      jest.useFakeTimers();
+      try {
+        // Retryable, so the first failure schedules a backoff before attempt 2.
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 3,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        // Let attempt 1 fail and enter backoff, but not reach attempt 2.
+        await jest.advanceTimersByTimeAsync(100);
+        const callsBeforeOptOut = fetchMock.mock.calls.length;
+        expect(callsBeforeOptOut).toBe(1);
+
+        // Consent withdrawn mid-backoff.
+        queue.clear();
+
+        // Even if the API would now accept them, no further attempt may go out.
+        fetchMock.mockResolvedValue({ ok: true, status: 200 });
+        await jest.advanceTimersByTimeAsync(300_000);
+        expect(fetchMock.mock.calls.length).toBe(callsBeforeOptOut);
+
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe("dedup across clear()", () => {
+    it("does not strip the dedup entry of an event re-enqueued after clear()", async () => {
+      let releaseSend: (value: { ok: boolean; status: number }) => void;
+      fetchMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseSend = resolve;
+        })
+      );
+
+      const queue = makeQueue({ flushAt: 20 });
+      await queue.enqueue(makeEvent(1));
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Opt out, then the same event is produced again and re-enqueued.
+      queue.clear();
+      await queue.enqueue(makeEvent(1));
+      await settle();
+
+      // The original send now succeeds. It must not delete the hash that the
+      // newly queued copy of the same event depends on.
+      releaseSend!({ ok: true, status: 200 });
+      await settle();
+
+      // A third identical enqueue must still be recognised as a duplicate.
+      fetchMock.mockClear();
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+      await queue.enqueue(makeEvent(1));
+      await queue.flush();
+      await settle();
+
+      const delivered = fetchMock.mock.calls.flatMap(
+        ([, init]) => JSON.parse(init.body as string) as Array<{ event: string }>
+      );
+      expect(delivered.filter((e) => e.event === "event-1")).toHaveLength(1);
+
+      await queue.cleanup();
+    });
+  });
+
+  describe("enqueue racing clear()", () => {
+    it("drops an event whose hashing was still pending when the user opted out", async () => {
+      const queue = makeQueue();
+
+      // Do NOT await: enqueue suspends on the async message-id hash, so the
+      // event has not reached the queue that clear() empties.
+      const pending = queue.enqueue(makeEvent(1));
+      queue.clear();
+      await pending;
+      await settle();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await queue.cleanup();
+    });
+  });
+
+  describe("enqueue racing cleanup", () => {
+    it("drops an event whose hashing was still pending when cleanup ran", async () => {
+      const queue = makeQueue();
+
+      // Do NOT await: enqueue suspends on the async message-id hash.
+      const pending = queue.enqueue(makeEvent(1));
+      await queue.cleanup();
+      await pending;
+      await settle();
+
+      // Nothing may be sent on an instance that has already been torn down.
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("retryable status codes", () => {
+    it("retries a 408 request timeout instead of dropping the batch", async () => {
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValue({ ok: false, status: 408 });
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(30_000);
+        const afterFirst = fetchMock.mock.calls.length;
+        expect(afterFirst).toBeGreaterThan(1); // retried, not dropped
+
+        // Still queued, so the interval keeps trying.
+        await jest.advanceTimersByTimeAsync(60_000);
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirst);
+
+        queue.clear();
+        await queue.cleanup();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("consumer callbacks", () => {
+    it("does not let a rejected async callback escape as an unhandled rejection", async () => {
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      const proc = (globalThis as unknown as { process: NodeProcess }).process;
+      proc.on("unhandledRejection", onUnhandled);
+
+      try {
+        const queue = makeQueue();
+        // An async callback reports failure by rejecting, not by throwing.
+        const rejecting = async () => {
+          throw new Error("async callback blew up");
+        };
+
+        await queue.enqueue(makeEvent(1), rejecting);
+        await settle();
+        await queue.flush(rejecting);
+        await settle();
+
+        expect(unhandled).toEqual([]);
+        await queue.cleanup();
+      } finally {
+        proc.off("unhandledRejection", onUnhandled);
+      }
+    });
+
     it("does not let a throwing callback escape flush() on an empty queue", async () => {
       const queue = makeQueue();
       const throwing = () => {

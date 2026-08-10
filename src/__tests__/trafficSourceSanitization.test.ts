@@ -104,6 +104,41 @@ describe("traffic source sanitization", () => {
       expect(sanitizeUtm("goo\ufffdgle")).toBe("");
     });
 
+    it("rejects a double-encoded payload that survives one decode", () => {
+      // URLSearchParams decodes one layer before the value reaches sanitizeUtm,
+      // so a twice-encoded payload arrives as this literal — no raw markup.
+      expect(sanitizeUtm("%3Cscript%3Ealert(1)%3C%2Fscript%3E")).toBe("");
+      expect(sanitizeUtm("%253Cscript%253E")).toBe("");
+      expect(sanitizeUtm("javascript%3Aalert(1)")).toBe("");
+    });
+
+    it("rejects a scheme hidden behind an encoded multi-byte space", () => {
+      // %E3%80%80 is U+3000 IDEOGRAPHIC SPACE, which "^\\s*javascript:" is meant
+      // to skip over. It only decodes when the whole escape run is decoded
+      // together — %E3 on its own is not valid UTF-8.
+      expect(sanitizeUtm("%E3%80%80javascript%3Aalert(1)")).toBe("");
+      expect(
+        sanitizeReferrer("myapp://x?utm_source=%25E3%2580%2580javascript%253Aalert(1)")
+      ).toBe("");
+    });
+
+    it("rejects a scheme hidden behind an invalid UTF-8 byte", () => {
+      // %C0 is not valid UTF-8. Decoding the run as a unit throws, so a naive
+      // decoder returns it whole and the "<" never materializes.
+      expect(sanitizeUtm("%3C%C0img src=x onerror=alert(1)")).toBe("");
+      expect(sanitizeUtm("%C0%3Cscript%3E")).toBe("");
+    });
+
+    it("keeps legitimate encoded multi-byte text", () => {
+      // café — decodes cleanly and contains nothing forbidden.
+      expect(sanitizeUtm("caf%C3%A9")).toBe("caf%C3%A9");
+    });
+
+    it("keeps a percent sign that is not an escape sequence", () => {
+      expect(sanitizeUtm("50% off")).toBe("50% off");
+      expect(sanitizeUtm("100%")).toBe("100%");
+    });
+
     it("rejects absurdly long values", () => {
       expect(sanitizeUtm("a".repeat(255))).toBe("a".repeat(255));
       expect(sanitizeUtm("a".repeat(256))).toBe("");
@@ -125,6 +160,122 @@ describe("traffic source sanitization", () => {
         sanitizeReferrer("myapp://x?utm_source=<script>alert(1)</script>")
       ).toBe("");
       expect(sanitizeReferrer("javascript:alert(1)")).toBe("");
+    });
+
+    it("drops a payload that is percent-encoded, as a real URL carries it", () => {
+      // The raw string has no "<" at all — Linking and the browser encode it —
+      // so a raw-only check would pass this straight through.
+      expect(
+        sanitizeReferrer("myapp://x?utm_source=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
+      ).toBe("");
+      expect(sanitizeReferrer("myapp://x?ref=%3Cimg%20src%3Dx%20onerror%3D1%3E")).toBe(
+        ""
+      );
+      expect(sanitizeReferrer("%6Aavascript:alert(1)")).toBe("");
+    });
+
+    it("drops a double-encoded payload", () => {
+      expect(
+        sanitizeReferrer("myapp://x?utm_source=%253Cscript%253Ealert(1)%253C%252Fscript%253E")
+      ).toBe("");
+    });
+
+    it("keeps encoded characters that are legitimate in a query value", () => {
+      // Quotes and spaces decode to harmless text and are common in search
+      // deep links, so the decoded check must not reject them.
+      expect(
+        sanitizeReferrer("myapp://search?q=%22running%20shoes%22")
+      ).toBe("myapp://search?q=%22running%20shoes%22");
+      expect(sanitizeReferrer("myapp://x?name=T-Shirt%20%26%20Jeans")).toBe(
+        "myapp://x?name=T-Shirt%20%26%20Jeans"
+      );
+    });
+
+    it("survives a malformed percent escape rather than throwing", () => {
+      // decodeURIComponent throws on a stray "%"; the value must still be
+      // evaluated, not crash traffic-source capture.
+      expect(() => sanitizeReferrer("myapp://x?q=100%")).not.toThrow();
+      expect(sanitizeReferrer("myapp://x?q=100%")).toBe("myapp://x?q=100%");
+    });
+
+    it("is not bypassed by appending a malformed escape to a payload", () => {
+      // A stray trailing "%" makes decodeURIComponent reject the whole string,
+      // which would otherwise skip every decoded check.
+      expect(
+        sanitizeReferrer("myapp://x?utm_source=%3Cscript%3Ealert(1)%3C%2Fscript%3E%")
+      ).toBe("");
+    });
+
+    it("drops a dangerous scheme smuggled inside a query value", () => {
+      // The URL itself starts with "myapp://", so an anchored check against the
+      // whole string never matches; the parameter has to be read on its own.
+      expect(sanitizeReferrer("myapp://x?utm_source=javascript%3Aalert(1)")).toBe(
+        ""
+      );
+      expect(sanitizeReferrer("myapp://x?r=data%3Atext%2Fhtml%3Bbase64%2CPHN2Zz4=")).toBe(
+        ""
+      );
+    });
+
+    it("drops a deeply multi-encoded payload", () => {
+      expect(
+        sanitizeReferrer("myapp://x?utm_source=%2525253Cscript%2525253E")
+      ).toBe("");
+    });
+
+    it("drops a payload encoded past any fixed layer limit", () => {
+      // Decoding runs to a fixed point rather than a set number of layers.
+      expect(
+        sanitizeReferrer(
+          "myapp://x?utm_source=%252525252525253Cscript%252525252525253E"
+        )
+      ).toBe("");
+      const deep = `myapp://x?u=${"%25".repeat(20)}3Cscript${"%25".repeat(20)}3E`;
+      expect(sanitizeReferrer(deep)).toBe("");
+    });
+
+    it("drops a scheme re-encoded past any small constant layer bound", () => {
+      // Re-encoding "javascript:alert(1)" only grows its single "%" by two
+      // characters a layer, so 66 layers fit in ~151 characters — well under
+      // any plausible fixed cap.
+      let payload = "javascript:alert(1)";
+      for (let i = 0; i < 66; i++) payload = encodeURIComponent(payload);
+      expect(payload.length).toBeLessThan(200);
+      expect(sanitizeUtm(payload)).toBe("");
+      expect(sanitizeReferrer(`myapp://x?utm_source=${payload}`)).toBe("");
+    });
+
+    it("drops a scheme hidden behind an encoded separator", () => {
+      // The "=" is encoded, so URLSearchParams reports a single key that only
+      // becomes "utm_source=javascript:alert(1)" after decoding — at which
+      // point an anchored scheme test no longer sees the payload at the start.
+      expect(
+        sanitizeReferrer("myapp://x?utm_source%3Djavascript%253Aalert(1)")
+      ).toBe("");
+      expect(
+        sanitizeReferrer(
+          "utm_source%3Djavascript%253Aalert(1)%26utm_medium%3Dcpc"
+        )
+      ).toBe("");
+    });
+
+    it("drops a dangerous scheme hidden in a query KEY with no value", () => {
+      // "?%6Aavascript:alert(1)" has no "=", so it parses entirely as a key
+      // and contributes no value to inspect.
+      expect(
+        sanitizeReferrer("https://play.google.com/store/apps?%6Aavascript:alert(1)")
+      ).toBe("");
+      expect(sanitizeReferrer("myapp://x?javascript:alert(1)")).toBe("");
+    });
+
+    it("sanitizes a bare Android install-referrer query string", () => {
+      // No "?" and no scheme — just the raw referrer parameter from Play.
+      expect(
+        sanitizeReferrer("utm_source=%3Cscript%3E&utm_medium=cpc")
+      ).toBe("");
+      expect(sanitizeReferrer("utm_source=google&utm_medium=cpc")).toBe(
+        "utm_source=google&utm_medium=cpc"
+      );
     });
 
     it("allows URLs longer than the UTM budget but bounds them at 2048", () => {
@@ -174,6 +325,15 @@ describe("traffic source sanitization", () => {
       );
       expect(ts.utm_source).toBe("");
       expect(ts.utm_medium).toBe("cpc");
+    });
+
+    it("drops a double-encoded utm payload end to end", () => {
+      const ts = parseTrafficSource(
+        "myapp://product?utm_source=%253Cscript%253Ealert(1)%253C%252Fscript%253E&utm_medium=cpc"
+      );
+      expect(ts.utm_source).toBe("");
+      expect(ts.utm_medium).toBe("cpc");
+      expect(JSON.stringify(ts)).not.toContain("script");
     });
 
     it("drops a poisoned ref from a deep link", () => {
