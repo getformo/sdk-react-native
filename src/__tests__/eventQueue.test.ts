@@ -786,6 +786,51 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("concurrent cleanup", () => {
+    it("joins the teardown already under way instead of racing it", async () => {
+      jest.useFakeTimers();
+      try {
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+        // The drain flush fails retryably and re-queues, which is what a second
+        // teardown would otherwise pick up and send.
+        fetchMock.mockResolvedValue({ ok: false, status: 500 });
+
+        const queue = new EventQueue("test-write-key", {
+          apiHost: "https://events.formo.test",
+          flushAt: 20,
+          flushInterval: 10_000,
+          retryCount: 1,
+        });
+
+        await queue.enqueue(makeEvent(1));
+        await jest.advanceTimersByTimeAsync(100);
+
+        const callback = jest.fn();
+        await queue.enqueue(makeEvent(2), callback);
+
+        // Two teardowns started concurrently — the provider can call cleanup
+        // more than once, and it is public API besides.
+        const first = queue.cleanup();
+        const second = queue.cleanup();
+        await jest.advanceTimersByTimeAsync(30_000);
+        await Promise.all([first, second]);
+
+        const sendsAfterTeardown = fetchMock.mock.calls.length;
+        const callbacksAfterTeardown = callback.mock.calls.length;
+
+        await jest.advanceTimersByTimeAsync(30_000);
+        expect(fetchMock.mock.calls.length).toBe(sendsAfterTeardown);
+        expect(callback.mock.calls.length).toBe(callbacksAfterTeardown);
+
+        // 1 first-event send, then the single drain flush and its one retry.
+        // A second teardown would add its own attempts on top.
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe("enqueue racing cleanup", () => {
     it("drops an event whose hashing was still pending when cleanup ran", async () => {
       const queue = makeQueue();

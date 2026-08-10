@@ -120,6 +120,13 @@ export class EventQueue implements IEventQueue {
    * after consent was withdrawn.
    */
   private generation = 0;
+  /**
+   * The in-progress teardown, if any. cleanup() is public and the provider can
+   * call it more than once; a second run would start its own drain flush that
+   * is exempt from the closed check, splice the events the first run had just
+   * re-queued, and send them after the first cleanup() had already resolved.
+   */
+  private cleanupPromise: Promise<void> | null = null;
 
   constructor(writeKey: string, options: Options) {
     this.writeKey = writeKey;
@@ -569,6 +576,15 @@ export class EventQueue implements IEventQueue {
    * Clean up resources, flushing any pending events first
    */
   public async cleanup(): Promise<void> {
+    // Teardown is idempotent: a caller that asks twice joins the run already
+    // under way rather than starting a competing one.
+    if (!this.cleanupPromise) {
+      this.cleanupPromise = this.runCleanup();
+    }
+    return this.cleanupPromise;
+  }
+
+  private async runCleanup(): Promise<void> {
     // Stop anything from arming a new timer for the rest of teardown.
     this.closed = true;
     if (this.timer) {
