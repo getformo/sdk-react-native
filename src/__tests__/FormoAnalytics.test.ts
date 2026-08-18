@@ -435,9 +435,12 @@ describe('FormoAnalytics', () => {
 
     it.each(publicMethods)('binds %s to the instance', (name) => {
       expect(Object.prototype.hasOwnProperty.call(analytics, name)).toBe(true);
+      expect(analytics[name]).not.toBe(FormoAnalytics.prototype[name]);
     });
 
     it('reset works when destructured off the instance', () => {
+      analytics.currentUserId = 'user-1';
+
       const { reset } = analytics;
 
       expect(() => reset()).not.toThrow();
