@@ -405,6 +405,50 @@ describe('FormoAnalytics', () => {
     });
   });
 
+  describe('method binding', () => {
+    // useFormo consumers destructure methods off the instance
+    // (const { reset } = useFormo()), so every public interface method must
+    // be bound in the constructor or `this` is undefined at the call site.
+    const publicMethods = [
+      'identify',
+      'connect',
+      'disconnect',
+      'chain',
+      'signature',
+      'transaction',
+      'detect',
+      'track',
+      'screen',
+      'reset',
+      'cleanup',
+      'flush',
+      'setTrafficSourceFromUrl',
+      'optOutTracking',
+      'optInTracking',
+      'hasOptedOutTracking',
+      'pushNotificationReceived',
+      'pushNotificationTapped',
+      'pushNotificationBounced',
+      'isAutocaptureEnabled',
+      'isAttributionEnabled',
+    ] as const;
+
+    it.each(publicMethods)('binds %s to the instance', (name) => {
+      expect(Object.prototype.hasOwnProperty.call(analytics, name)).toBe(true);
+      expect(analytics[name]).not.toBe(FormoAnalytics.prototype[name]);
+    });
+
+    it('reset works when destructured off the instance', () => {
+      analytics.currentUserId = 'user-1';
+
+      const { reset } = analytics;
+
+      expect(() => reset()).not.toThrow();
+      expect(mockSession.clear).toHaveBeenCalled();
+      expect(analytics.currentUserId).toBeUndefined();
+    });
+  });
+
   describe('isAutocaptureEnabled()', () => {
     it('should return true by default', () => {
       expect(analytics.isAutocaptureEnabled('connect')).toBe(true);

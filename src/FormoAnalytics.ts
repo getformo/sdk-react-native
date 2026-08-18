@@ -86,7 +86,18 @@ export class FormoAnalytics implements IFormoAnalytics {
     this.detect = this.detect.bind(this);
     this.track = this.track.bind(this);
     this.screen = this.screen.bind(this);
+    this.reset = this.reset.bind(this);
+    this.cleanup = this.cleanup.bind(this);
+    this.flush = this.flush.bind(this);
+    this.setTrafficSourceFromUrl = this.setTrafficSourceFromUrl.bind(this);
+    this.optOutTracking = this.optOutTracking.bind(this);
+    this.optInTracking = this.optInTracking.bind(this);
+    this.hasOptedOutTracking = this.hasOptedOutTracking.bind(this);
+    this.pushNotificationReceived = this.pushNotificationReceived.bind(this);
+    this.pushNotificationTapped = this.pushNotificationTapped.bind(this);
+    this.pushNotificationBounced = this.pushNotificationBounced.bind(this);
     this.isAutocaptureEnabled = this.isAutocaptureEnabled.bind(this);
+    this.isAttributionEnabled = this.isAttributionEnabled.bind(this);
 
     // Initialize logger
     Logger.init({
