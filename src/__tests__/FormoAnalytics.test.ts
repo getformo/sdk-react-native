@@ -568,10 +568,29 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentUserId).toBeUndefined();
     });
 
-    it('should remove storage keys', () => {
+    it('should clear the active wallet', () => {
+      analytics.currentAddress = '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf';
+      analytics.currentChainId = 1;
+
       analytics.reset();
 
-      expect(mockStorageInstance.remove).toHaveBeenCalled();
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+    });
+
+    it('should start a new session but keep the anonymous id', () => {
+      analytics.reset();
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
+    });
+  });
+
+  describe('optOutTracking()', () => {
+    it('should clear the anonymous id as well', () => {
+      analytics.optOutTracking();
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('anonymous_id');
     });
   });
 
