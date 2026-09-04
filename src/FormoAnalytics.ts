@@ -40,7 +40,7 @@ import {
   TransactionStatus,
 } from "./types";
 import { validateAddress } from "./utils";
-import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
+import { clearTrafficSource, parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
 
@@ -752,8 +752,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
     this.eventQueue.clear();
     this.reset();
-    // Consent withdrawal is the one case where the device id must go too.
+    // Consent withdrawal is the one case where the device id and the stored
+    // attribution must go too. reset() keeps both: they describe the device
+    // and the visit, not the user.
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
+    clearTrafficSource();
     logger.info("Successfully opted out of tracking");
   }
 

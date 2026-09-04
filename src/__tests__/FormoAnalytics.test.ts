@@ -587,10 +587,17 @@ describe('FormoAnalytics', () => {
   });
 
   describe('optOutTracking()', () => {
-    it('should clear the anonymous id as well', () => {
+    it('should clear the anonymous id and the stored attribution as well', () => {
       analytics.optOutTracking();
 
       expect(mockStorageInstance.remove).toHaveBeenCalledWith('anonymous_id');
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('traffic_source');
+    });
+
+    it('reset() alone keeps the stored attribution', () => {
+      analytics.reset();
+
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('traffic_source');
     });
   });
 
