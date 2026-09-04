@@ -149,5 +149,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit production dependencies
-        # Fail on advisories, not registry outages.
-        run: pnpm audit --prod --ignore-registry-errors
+        # Temporary: tolerate npm registry timeouts only.
+        run: |
+          set +e
+          output="$(pnpm audit --prod --ignore-registry-errors 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if printf '%s\n' "$output" | grep -Eq 'TimeoutError|\[23\] The operation was aborted due to timeout'; then
+            echo '::warning::npm advisory registry timed out; audit is temporarily non-blocking for this outage'
+            exit 0
+          fi
+          exit "$status"
