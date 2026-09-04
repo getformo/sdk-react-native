@@ -233,6 +233,19 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentAddress).toBeUndefined();
       expect(analytics.currentChainId).toBeUndefined();
     });
+
+    it('should not learn wallet state while opted out', async () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      await analytics.connect({
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('disconnect()', () => {
@@ -664,6 +677,19 @@ describe('FormoAnalytics', () => {
         'traffic_source',
         expect.anything()
       );
+    });
+
+    it('does not learn identity markers while opted out', async () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      await analytics.identify({
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+      await analytics.detect({ providerName: 'MetaMask', rdns: 'io.metamask' });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(mockSession.markWalletIdentified).not.toHaveBeenCalled();
+      expect(mockSession.markWalletDetected).not.toHaveBeenCalled();
     });
   });
 

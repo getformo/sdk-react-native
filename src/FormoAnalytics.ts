@@ -461,6 +461,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn(`Connect: Invalid address provided ("${address}")`);
       return;
     }
+    if (this.hasOptedOutTracking()) return;
     const generation = ++this.walletGeneration;
 
     // Track event before updating state so connect events TO excluded chains are tracked
@@ -472,7 +473,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    if (generation === this.walletGeneration) {
+    if (
+      generation === this.walletGeneration &&
+      !this.hasOptedOutTracking()
+    ) {
       this.currentChainId = chainId;
       this.currentAddress = validatedAddress;
     }
@@ -534,6 +538,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn("FormoAnalytics::chain: address was empty and no previous address recorded");
       return;
     }
+    if (this.hasOptedOutTracking()) return;
     const generation = ++this.walletGeneration;
 
     // Track event before updating currentChainId so shouldTrack uses the previous chain
@@ -546,7 +551,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    if (generation === this.walletGeneration) {
+    if (
+      generation === this.walletGeneration &&
+      !this.hasOptedOutTracking()
+    ) {
       this.currentChainId = chainId;
     }
   }
@@ -661,6 +669,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     try {
       const { userId, address, providerName, rdns } = params;
       logger.info("Identify", address, userId, providerName, rdns);
+      if (this.hasOptedOutTracking()) return;
 
       let validAddress: Address | undefined = undefined;
       if (address) {
@@ -721,6 +730,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    if (this.hasOptedOutTracking()) return;
     if (this.session.isWalletDetected(rdns)) {
       logger.warn(`Detect: Wallet ${providerName} already detected in this session`);
       return;
