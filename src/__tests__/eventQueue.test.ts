@@ -531,7 +531,7 @@ describe("EventQueue", () => {
       const queue = makeQueue({ flushAt: 20 });
       const generateMessageId = jest
         .spyOn(queue as any, "generateMessageId")
-        .mockImplementation(async (_event: IFormoEvent, generation = 0) =>
+        .mockImplementation(async (_event: any, generation: any = 0) =>
           `message-${generation}`
         );
 
