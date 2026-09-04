@@ -617,18 +617,27 @@ describe('FormoAnalytics', () => {
       expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
     });
 
-    it('should preserve excluded-chain filtering', async () => {
+    it('should filter chain-scoped events after reset', async () => {
       analytics.options.tracking = { excludeChains: [1] };
-      await analytics.connect({
+      analytics.reset();
+
+      await analytics.transaction({
+        status: TransactionStatus.STARTED,
         chainId: 1,
         address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
       });
-      mockEventManager.addEvent.mockClear();
-
-      analytics.reset();
-      await analytics.track('after reset');
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('should not bind unscoped events to the cleared chain', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+      analytics.reset();
+
+      await analytics.track('after reset');
+
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
   });
 

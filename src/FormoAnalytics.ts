@@ -61,7 +61,6 @@ export class FormoAnalytics implements IFormoAnalytics {
   private initialDeepLinkUrl?: string;
   private linkingSubscription?: EmitterSubscription;
   private walletGeneration = 0;
-  private trackingChainId?: ChainID;
 
   config: Config;
   currentChainId?: ChainID;
@@ -474,7 +473,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     );
 
     if (generation === this.walletGeneration) {
-      this.trackingChainId = chainId;
       this.currentChainId = chainId;
       this.currentAddress = validatedAddress;
     }
@@ -512,7 +510,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     if (generation === this.walletGeneration) {
       this.currentAddress = undefined;
       this.currentChainId = undefined;
-      this.trackingChainId = undefined;
     }
   }
 
@@ -550,7 +547,6 @@ export class FormoAnalytics implements IFormoAnalytics {
     );
 
     if (generation === this.walletGeneration) {
-      this.trackingChainId = chainId;
       this.currentChainId = chainId;
     }
   }
@@ -874,7 +870,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
     try {
-      if (!this.shouldTrack()) {
+      const eventChainId =
+        type === EventType.CONNECT || type === EventType.CHAIN
+          ? this.currentChainId
+          : (payload?.chainId as ChainID | undefined);
+      if (!this.shouldTrack(eventChainId)) {
         logger.info(`Skipping ${type} event due to tracking configuration`);
         return;
       }
@@ -905,7 +905,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   /**
    * Check if tracking should be enabled
    */
-  private shouldTrack(): boolean {
+  private shouldTrack(eventChainId?: ChainID): boolean {
     // Check consent
     if (this.hasOptedOutTracking()) {
       return false;
@@ -923,11 +923,13 @@ export class FormoAnalytics implements IFormoAnalytics {
       !Array.isArray(this.options.tracking)
     ) {
       const { excludeChains = [] } = this.options.tracking as TrackingOptions;
+      const chainId = eventChainId ?? this.currentChainId;
 
       if (
         excludeChains.length > 0 &&
-        this.trackingChainId &&
-        excludeChains.includes(this.trackingChainId)
+        chainId !== undefined &&
+        chainId !== null &&
+        excludeChains.includes(chainId)
       ) {
         return false;
       }
