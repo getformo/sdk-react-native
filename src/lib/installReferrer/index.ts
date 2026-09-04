@@ -39,18 +39,24 @@ import {
 import type { ITrafficSource } from "../../types";
 
 // Lazy-load the optional native module. Absence is fine — attribution is best-effort.
-let PlayInstallReferrer: {
+type PlayInstallReferrerModule = {
   getInstallReferrerInfo: (
     cb: (info: { installReferrer?: string } | null, error?: unknown) => void
   ) => void;
-} | null = null;
+};
 
-try {
-  PlayInstallReferrer = require("react-native-play-install-referrer")
-    .PlayInstallReferrer;
-} catch {
-  // Not installed — Android install referrer capture will no-op.
-}
+let PlayInstallReferrer: PlayInstallReferrerModule | null | undefined;
+
+const getPlayInstallReferrer = (): PlayInstallReferrerModule | null => {
+  if (PlayInstallReferrer !== undefined) return PlayInstallReferrer;
+  try {
+    PlayInstallReferrer = require("react-native-play-install-referrer")
+      .PlayInstallReferrer;
+  } catch {
+    PlayInstallReferrer = null;
+  }
+  return PlayInstallReferrer ?? null;
+};
 
 /**
  * Upper bound on the Play Install Referrer native call.
@@ -132,7 +138,8 @@ export async function captureInstallReferrer(
 async function captureAndroidReferrer(
   options: CaptureOptions
 ): Promise<boolean> {
-  if (!PlayInstallReferrer) {
+  const playInstallReferrer = getPlayInstallReferrer();
+  if (!playInstallReferrer) {
     // Warn (not debug) on Android: attribution silently does nothing here, and
     // marking the peer optional suppresses the missing-peer install warning, so
     // this is the only actionable signal the integrator gets.
@@ -176,7 +183,7 @@ async function captureAndroidReferrer(
     }, INSTALL_REFERRER_TIMEOUT_MS);
 
     try {
-      PlayInstallReferrer!.getInstallReferrerInfo((info, error) => {
+      playInstallReferrer.getInstallReferrerInfo((info, error) => {
         if (error) {
           logger.debug("InstallReferrer: Play API error", error);
           finish({ ok: false, info: null });

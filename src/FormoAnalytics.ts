@@ -60,6 +60,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private crashReporter?: CrashReporter;
   private initialDeepLinkUrl?: string;
   private linkingSubscription?: EmitterSubscription;
+  private consentGeneration = 0;
   private walletGeneration = 0;
   private chainGeneration = 0;
 
@@ -189,10 +190,13 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     if (analytics.isAttributionEnabled("installReferrer")) {
       try {
+        const generation = analytics.consentGeneration;
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
-          canCapture: () => !analytics.hasOptedOutTracking(),
+          canCapture: () =>
+            generation === analytics.consentGeneration &&
+            !analytics.hasOptedOutTracking(),
         });
       } catch (error) {
         logger.debug("FormoAnalytics: install referrer capture failed", error);
@@ -245,8 +249,13 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   private async startDeepLinkCapture(): Promise<void> {
     try {
+      const generation = this.consentGeneration;
       const url = await Linking.getInitialURL();
-      if (url && !this.hasOptedOutTracking()) {
+      if (
+        url &&
+        generation === this.consentGeneration &&
+        !this.hasOptedOutTracking()
+      ) {
         if (this.isAttributionEnabled("deeplinks")) {
           this.setTrafficSourceFromUrl(url);
         }
@@ -786,6 +795,8 @@ export class FormoAnalytics implements IFormoAnalytics {
   public optOutTracking(): void {
     logger.info("Opting out of tracking");
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
+    this.consentGeneration++;
+    this.initialDeepLinkUrl = undefined;
     this.eventManager.clear();
     this.reset();
     // Consent withdrawal clears device identity and attribution too.

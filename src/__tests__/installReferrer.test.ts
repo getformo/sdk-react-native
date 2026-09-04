@@ -41,7 +41,6 @@ jest.mock("../lib/logger", () => ({
   },
 }));
 
-// Simulate a stalled Play Store service: the callback is never invoked.
 const mockGetInstallReferrerInfo = jest.fn();
 jest.mock(
   "react-native-play-install-referrer",
@@ -54,14 +53,20 @@ jest.mock(
 );
 
 import { captureInstallReferrer } from "../lib/installReferrer";
+import { Platform } from "react-native";
+import { getStorageManager, storage } from "../lib/storage";
 
 describe("captureInstallReferrer — hung native call", () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    (Platform as { OS: string }).OS = "android";
     mockStorageInstance.get.mockReturnValue(null);
+    mockStorageInstance.set.mockClear();
     mockStorageInstance.setAsync.mockClear();
     mockStorageManager.hasPersistentStorage.mockReturnValue(true);
     mockGetInstallReferrerInfo.mockClear();
+    (getStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
+    (storage as jest.Mock).mockReturnValue(mockStorageInstance);
   });
 
   afterEach(() => {
@@ -92,5 +97,24 @@ describe("captureInstallReferrer — hung native call", () => {
     await captureInstallReferrer({ canCapture: () => false });
 
     expect(mockGetInstallReferrerInfo).not.toHaveBeenCalled();
+  });
+
+  it("discards a result after consent changes", async () => {
+    let generation = 0;
+    const started = generation;
+    const promise = captureInstallReferrer({
+      canCapture: () => generation === started,
+    });
+    await Promise.resolve();
+    expect(Platform.OS).toBe("android");
+    expect(mockGetInstallReferrerInfo).toHaveBeenCalledTimes(1);
+    const callback = mockGetInstallReferrerInfo.mock.calls[0][0];
+
+    generation++;
+    callback({ installReferrer: "utm_source=test" });
+    await promise;
+
+    expect(mockStorageInstance.set).not.toHaveBeenCalled();
+    expect(mockStorageInstance.setAsync).not.toHaveBeenCalled();
   });
 });
