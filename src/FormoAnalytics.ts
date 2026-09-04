@@ -60,6 +60,8 @@ export class FormoAnalytics implements IFormoAnalytics {
   private crashReporter?: CrashReporter;
   private initialDeepLinkUrl?: string;
   private linkingSubscription?: EmitterSubscription;
+  private walletGeneration = 0;
+  private trackingChainId?: ChainID;
 
   config: Config;
   currentChainId?: ChainID;
@@ -186,6 +188,7 @@ export class FormoAnalytics implements IFormoAnalytics {
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
+          canCapture: () => !analytics.hasOptedOutTracking(),
         });
       } catch (error) {
         logger.debug("FormoAnalytics: install referrer capture failed", error);
@@ -239,7 +242,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private async startDeepLinkCapture(): Promise<void> {
     try {
       const url = await Linking.getInitialURL();
-      if (url) {
+      if (url && !this.hasOptedOutTracking()) {
         if (this.isAttributionEnabled("deeplinks")) {
           this.setTrafficSourceFromUrl(url);
         }
@@ -254,7 +257,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
-      if (!event?.url) return;
+      if (!event?.url || this.hasOptedOutTracking()) return;
       // Each behaviour checks its own flag: the hook may exist because only one
       // of them is enabled.
       if (this.isAttributionEnabled("deeplinks")) {
@@ -378,6 +381,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    * ```
    */
   public setTrafficSourceFromUrl(url: string): void {
+    if (this.hasOptedOutTracking()) return;
     const trafficSource = parseTrafficSource(
       url,
       this.options.referral?.queryParams,
@@ -392,6 +396,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /** Reset user and wallet state, preserving device identity and attribution. */
   public reset(): void {
+    this.walletGeneration++;
     this.currentUserId = undefined;
     this.currentAddress = undefined;
     this.currentChainId = undefined;
@@ -457,6 +462,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn(`Connect: Invalid address provided ("${address}")`);
       return;
     }
+    const generation = ++this.walletGeneration;
 
     // Track event before updating state so connect events TO excluded chains are tracked
     await this.trackEvent(
@@ -467,8 +473,11 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    this.currentChainId = chainId;
-    this.currentAddress = validatedAddress;
+    if (generation === this.walletGeneration) {
+      this.trackingChainId = chainId;
+      this.currentChainId = chainId;
+      this.currentAddress = validatedAddress;
+    }
   }
 
   /**
@@ -480,6 +489,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    const generation = ++this.walletGeneration;
     const chainId = params?.chainId || this.currentChainId;
     const address = params?.address || this.currentAddress;
 
@@ -499,8 +509,11 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    this.currentAddress = undefined;
-    this.currentChainId = undefined;
+    if (generation === this.walletGeneration) {
+      this.currentAddress = undefined;
+      this.currentChainId = undefined;
+      this.trackingChainId = undefined;
+    }
   }
 
   /**
@@ -524,6 +537,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn("FormoAnalytics::chain: address was empty and no previous address recorded");
       return;
     }
+    const generation = ++this.walletGeneration;
 
     // Track event before updating currentChainId so shouldTrack uses the previous chain
     // This ensures chain change events TO excluded chains are still tracked
@@ -535,7 +549,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    this.currentChainId = chainId;
+    if (generation === this.walletGeneration) {
+      this.trackingChainId = chainId;
+      this.currentChainId = chainId;
+    }
   }
 
   /**
@@ -656,10 +673,12 @@ export class FormoAnalytics implements IFormoAnalytics {
           logger.warn(`Identify: Invalid address provided ("${address}")`);
           return;
         }
+        this.walletGeneration++;
         this.currentAddress = validAddress;
         // Note: validateAddress returns Solana addresses unchanged (Base58, case-sensitive)
         // and EVM addresses checksummed.
       } else {
+        this.walletGeneration++;
         this.currentAddress = undefined;
       }
 
@@ -907,8 +926,8 @@ export class FormoAnalytics implements IFormoAnalytics {
 
       if (
         excludeChains.length > 0 &&
-        this.currentChainId &&
-        excludeChains.includes(this.currentChainId)
+        this.trackingChainId &&
+        excludeChains.includes(this.trackingChainId)
       ) {
         return false;
       }

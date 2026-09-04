@@ -87,6 +87,18 @@ describe("Deep Link Opened", () => {
     expect(trackedEvents).not.toContain("Deep Link Opened");
   });
 
+  it("ignores runtime links while opted out", async () => {
+    const analytics = await init();
+    const handler = addEventListener.mock.calls.at(-1)?.[1];
+    jest.spyOn(analytics, "hasOptedOutTracking").mockReturnValue(true);
+    const attribution = jest.spyOn(analytics, "setTrafficSourceFromUrl");
+
+    await handler({ url: "myapp://product?utm_source=twitter" });
+
+    expect(attribution).not.toHaveBeenCalled();
+    expect(trackedEvents).not.toContain("Deep Link Opened");
+  });
+
   it("still emits the event when only attribution is disabled", async () => {
     // The two flags are independent: attribution.deeplinks parses UTMs into
     // context, autocapture.deepLinks emits the event. Turning attribution off

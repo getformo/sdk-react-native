@@ -42,13 +42,12 @@ jest.mock("../lib/logger", () => ({
 }));
 
 // Simulate a stalled Play Store service: the callback is never invoked.
+const mockGetInstallReferrerInfo = jest.fn();
 jest.mock(
   "react-native-play-install-referrer",
   () => ({
     PlayInstallReferrer: {
-      getInstallReferrerInfo: () => {
-        /* intentionally never calls back */
-      },
+      getInstallReferrerInfo: mockGetInstallReferrerInfo,
     },
   }),
   { virtual: true }
@@ -62,6 +61,7 @@ describe("captureInstallReferrer — hung native call", () => {
     mockStorageInstance.get.mockReturnValue(null);
     mockStorageInstance.setAsync.mockClear();
     mockStorageManager.hasPersistentStorage.mockReturnValue(true);
+    mockGetInstallReferrerInfo.mockClear();
   });
 
   afterEach(() => {
@@ -86,5 +86,11 @@ describe("captureInstallReferrer — hung native call", () => {
       "install_referrer_resolved",
       "true"
     );
+  });
+
+  it("does not capture without consent", async () => {
+    await captureInstallReferrer({ canCapture: () => false });
+
+    expect(mockGetInstallReferrerInfo).not.toHaveBeenCalled();
   });
 });

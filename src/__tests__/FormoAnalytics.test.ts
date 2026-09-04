@@ -215,6 +215,24 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentChainId).toBe(1);
       expect(analytics.currentAddress).toBeDefined();
     });
+
+    it('should not restore wallet state after reset while connect is pending', async () => {
+      let finish!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finish = resolve; })
+      );
+
+      const pending = analytics.connect({
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+      analytics.reset();
+      finish();
+      await pending;
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+    });
   });
 
   describe('disconnect()', () => {
@@ -272,6 +290,20 @@ describe('FormoAnalytics', () => {
       await analytics.chain({ chainId: 137 });
 
       expect(analytics.currentChainId).toBe(137);
+    });
+
+    it('should not restore chain state after reset while a change is pending', async () => {
+      let finish!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finish = resolve; })
+      );
+
+      const pending = analytics.chain({ chainId: 137 });
+      analytics.reset();
+      finish();
+      await pending;
+
+      expect(analytics.currentChainId).toBeUndefined();
     });
   });
 
@@ -584,6 +616,20 @@ describe('FormoAnalytics', () => {
       expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
       expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
     });
+
+    it('should preserve excluded-chain filtering', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      await analytics.connect({
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+      mockEventManager.addEvent.mockClear();
+
+      analytics.reset();
+      await analytics.track('after reset');
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('optOutTracking()', () => {
@@ -598,6 +644,17 @@ describe('FormoAnalytics', () => {
       analytics.reset();
 
       expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('traffic_source');
+    });
+
+    it('does not store attribution while opted out', () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      analytics.setTrafficSourceFromUrl('myapp://home?utm_source=test');
+
+      expect(mockStorageInstance.set).not.toHaveBeenCalledWith(
+        'traffic_source',
+        expect.anything()
+      );
     });
   });
 

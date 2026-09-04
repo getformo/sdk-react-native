@@ -71,6 +71,7 @@ const INSTALL_REFERRER_TIMEOUT_MS = 1500;
 export interface CaptureOptions {
   customRefParams?: string[];
   pathPattern?: string;
+  canCapture?: () => boolean;
 }
 
 /**
@@ -81,6 +82,7 @@ export async function captureInstallReferrer(
   options: CaptureOptions = {}
 ): Promise<void> {
   try {
+    if (options.canCapture && !options.canCapture()) return;
     // The one-shot flag is only useful if it can persist across launches.
     // Without AsyncStorage (MemoryStorage fallback) the flag is lost every
     // restart, so we'd re-hit the native API every cold start. Mirror the
@@ -114,7 +116,7 @@ export async function captureInstallReferrer(
       return;
     }
 
-    if (didResolve) {
+    if (didResolve && (!options.canCapture || options.canCapture())) {
       await storage().setAsync(LOCAL_INSTALL_REFERRER_RESOLVED_KEY, "true");
     }
   } catch (error) {
@@ -189,6 +191,7 @@ async function captureAndroidReferrer(
   });
 
   if (!result.ok) return false; // errored — retry next launch
+  if (options.canCapture && !options.canCapture()) return false;
 
   const referrerQuery = result.info?.installReferrer;
   if (!referrerQuery) {
