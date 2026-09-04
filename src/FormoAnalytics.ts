@@ -390,12 +390,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     logger.debug("Traffic source set from URL:", trafficSource);
   }
 
-  /**
-   * Reset the current user session: forget the user id and the active wallet
-   * and start a new session. The anonymous id is kept; it identifies the
-   * device, not the user, and is what Visitors counts. Use
-   * `optOutTracking()` to clear it too. Same contract as the web SDK.
-   */
+  /** Reset user and wallet state, preserving device identity and attribution. */
   public reset(): void {
     this.currentUserId = undefined;
     this.currentAddress = undefined;
@@ -752,9 +747,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
     this.eventQueue.clear();
     this.reset();
-    // Consent withdrawal is the one case where the device id and the stored
-    // attribution must go too. reset() keeps both: they describe the device
-    // and the visit, not the user.
+    // Consent withdrawal clears device identity and attribution too.
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
     clearTrafficSource();
     logger.info("Successfully opted out of tracking");
