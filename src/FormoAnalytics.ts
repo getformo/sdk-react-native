@@ -556,6 +556,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       !this.hasOptedOutTracking()
     ) {
       this.currentChainId = chainId;
+      if (address) this.currentAddress = address;
     }
   }
 

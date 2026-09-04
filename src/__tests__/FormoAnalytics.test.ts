@@ -318,6 +318,26 @@ describe('FormoAnalytics', () => {
 
       expect(analytics.currentChainId).toBeUndefined();
     });
+
+    it('should retain the address when a chain change overtakes connect', async () => {
+      let finishConnect!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finishConnect = resolve; })
+      );
+      analytics.currentAddress = undefined;
+      analytics.currentChainId = undefined;
+      const address = '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2';
+
+      const pendingConnect = analytics.connect({ chainId: 1, address });
+      await analytics.chain({ chainId: 137, address });
+      finishConnect();
+      await pendingConnect;
+
+      expect((analytics.currentAddress as string | undefined)?.toLowerCase()).toBe(
+        address.toLowerCase()
+      );
+      expect(analytics.currentChainId).toBe(137);
+    });
   });
 
   describe('signature()', () => {
