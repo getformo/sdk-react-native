@@ -338,6 +338,33 @@ describe('FormoAnalytics', () => {
       );
       expect(analytics.currentChainId).toBe(137);
     });
+
+    it('should retain a pending chain assignment across identify', async () => {
+      let finishChain!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finishChain = resolve; })
+      );
+      analytics.currentAddress = undefined;
+      analytics.currentChainId = undefined;
+      const address = '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2';
+
+      const pendingChain = analytics.chain({ chainId: 137, address });
+      await analytics.identify({ address });
+      finishChain();
+      await pendingChain;
+
+      expect(analytics.currentChainId).toBe(137);
+    });
+
+    it('should reject an invalid address before updating chain state', async () => {
+      await analytics.chain({ chainId: 137, address: 'not-an-address' });
+
+      expect(analytics.currentAddress).toBe(
+        '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2'
+      );
+      expect(analytics.currentChainId).toBe(1);
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('signature()', () => {
@@ -350,6 +377,20 @@ describe('FormoAnalytics', () => {
       });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+
+    it('should treat chainId 0 as unscoped for exclusions', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+
+      await analytics.signature({
+        status: SignatureStatus.REQUESTED,
+        chainId: 0,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+        message: 'test message',
+      });
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should track signature without chainId', async () => {
