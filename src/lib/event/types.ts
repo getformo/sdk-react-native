@@ -104,9 +104,11 @@ export interface IEventManager {
 export interface IEventQueue {
   enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    deduplicationGeneration?: number
   ): Promise<void>;
   flush(callback?: (...args: unknown[]) => void): Promise<void>;
+  getDeduplicationGeneration(): number;
   advanceDeduplication(): void;
   clear(): void;
   cleanup(): Promise<void>;

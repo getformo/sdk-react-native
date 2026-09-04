@@ -205,6 +205,10 @@ export class EventQueue implements IEventQueue {
     this.deduplicationGeneration++;
   }
 
+  public getDeduplicationGeneration(): number {
+    return this.deduplicationGeneration;
+  }
+
   /**
    * Check if event is a duplicate
    */
@@ -219,7 +223,8 @@ export class EventQueue implements IEventQueue {
    */
   async enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    deduplicationGeneration = this.deduplicationGeneration
   ): Promise<void> {
     if (this.closed) {
       logger.debug("EventQueue: Ignoring event enqueued after cleanup");
@@ -229,7 +234,6 @@ export class EventQueue implements IEventQueue {
     callback = callback || noop;
 
     const generation = this.generation;
-    const deduplicationGeneration = this.deduplicationGeneration;
     const message_id = await this.generateMessageId(
       event,
       deduplicationGeneration

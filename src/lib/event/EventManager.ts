@@ -37,6 +37,8 @@ class EventManager implements IEventManager {
   ): Promise<void> {
     const { callback, ..._event } = event;
     const generation = this.generation;
+    const deduplicationGeneration =
+      this.eventQueue.getDeduplicationGeneration();
     const shouldContinue = () =>
       generation === this.generation && this.canAcceptEvent();
     if (!shouldContinue()) return;
@@ -63,14 +65,18 @@ class EventManager implements IEventManager {
       return;
     }
 
-    await this.eventQueue.enqueue(formoEvent, (err, _, data) => {
-      if (err) {
-        logger.error("Error sending events:", err);
-      } else {
-        logger.info(`Events sent successfully: ${(data as unknown[])?.length ?? 0} events`);
-      }
-      callback?.(err, _, data);
-    });
+    await this.eventQueue.enqueue(
+      formoEvent,
+      (err, _, data) => {
+        if (err) {
+          logger.error("Error sending events:", err);
+        } else {
+          logger.info(`Events sent successfully: ${(data as unknown[])?.length ?? 0} events`);
+        }
+        callback?.(err, _, data);
+      },
+      deduplicationGeneration
+    );
   }
 
   advanceDeduplication(): void {
