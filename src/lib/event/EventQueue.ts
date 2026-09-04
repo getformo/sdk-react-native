@@ -562,6 +562,7 @@ export class EventQueue implements IEventQueue {
     this.generation++;
     this.queue = [];
     this.payloadHashes.clear();
+    this.flushed = false;
 
     if (this.timer) {
       clearTimeout(this.timer);

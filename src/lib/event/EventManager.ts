@@ -1,7 +1,12 @@
 import { Address, APIEvent, Options } from "../../types";
 import { logger } from "../logger";
 import { EventFactory } from "./EventFactory";
-import { IEventFactory, IEventManager, IEventQueue } from "./types";
+import {
+  EVENT_CREATION_CANCELLED,
+  IEventFactory,
+  IEventManager,
+  IEventQueue,
+} from "./types";
 import { isBlockedAddress } from "../../utils/address";
 
 /**
@@ -11,8 +16,13 @@ import { isBlockedAddress } from "../../utils/address";
 class EventManager implements IEventManager {
   eventQueue: IEventQueue;
   eventFactory: IEventFactory;
+  private generation = 0;
 
-  constructor(eventQueue: IEventQueue, options?: Options) {
+  constructor(
+    eventQueue: IEventQueue,
+    options?: Options,
+    private readonly canAcceptEvent: () => boolean = () => true
+  ) {
     this.eventQueue = eventQueue;
     this.eventFactory = new EventFactory(options);
   }
@@ -26,7 +36,24 @@ class EventManager implements IEventManager {
     userId?: string
   ): Promise<void> {
     const { callback, ..._event } = event;
-    const formoEvent = await this.eventFactory.create(_event, address, userId);
+    const generation = this.generation;
+    const shouldContinue = () =>
+      generation === this.generation && this.canAcceptEvent();
+    if (!shouldContinue()) return;
+
+    let formoEvent;
+    try {
+      formoEvent = await this.eventFactory.create(
+        _event,
+        address,
+        userId,
+        shouldContinue
+      );
+    } catch (error) {
+      if (error === EVENT_CREATION_CANCELLED) return;
+      throw error;
+    }
+    if (!shouldContinue()) return;
 
     // Check if the final event has a blocked address
     if (formoEvent.address && isBlockedAddress(formoEvent.address)) {
@@ -44,6 +71,15 @@ class EventManager implements IEventManager {
       }
       callback?.(err, _, data);
     });
+  }
+
+  advanceDeduplication(): void {
+    this.eventQueue.advanceDeduplication();
+  }
+
+  clear(): void {
+    this.generation++;
+    this.eventQueue.clear();
   }
 }
 

@@ -10,11 +10,15 @@ import {
   ChainID,
 } from "../../types";
 
+export type EventCreationGuard = () => boolean;
+export const EVENT_CREATION_CANCELLED = Symbol("event-creation-cancelled");
+
 export interface IEventFactory {
   create(
     event: APIEvent,
     address?: Address,
-    userId?: string
+    userId?: string,
+    shouldContinue?: EventCreationGuard
   ): Promise<IFormoEvent>;
 
   generateScreenEvent(
@@ -93,6 +97,8 @@ export interface IEventFactory {
 
 export interface IEventManager {
   addEvent(event: APIEvent, address?: Address, userId?: string): Promise<void>;
+  advanceDeduplication(): void;
+  clear(): void;
 }
 
 export interface IEventQueue {

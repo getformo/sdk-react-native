@@ -570,6 +570,22 @@ describe("EventQueue", () => {
 
       await queue.cleanup();
     });
+
+    it("flushes the first event immediately after clear()", async () => {
+      const queue = makeQueue({ flushAt: 20 });
+
+      await queue.enqueue(makeEvent(1));
+      await settle();
+      fetchMock.mockClear();
+
+      queue.clear();
+      await queue.enqueue(makeEvent(2));
+      await settle();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sentEvents().map((event) => event.event)).toEqual(["event-2"]);
+      await queue.cleanup();
+    });
   });
 
   describe("cleanup with a stalled request", () => {

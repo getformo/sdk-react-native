@@ -16,6 +16,8 @@ const mockStorageManager = {
 
 const mockEventManager = {
   addEvent: jest.fn(),
+  advanceDeduplication: jest.fn(),
+  clear: jest.fn(),
 };
 
 const mockEventQueue = {
@@ -108,6 +110,8 @@ const setupMocks = () => {
 
   // Event mocks
   mockEventManager.addEvent.mockResolvedValue(undefined);
+  mockEventManager.advanceDeduplication.mockReturnValue(undefined);
+  mockEventManager.clear.mockReturnValue(undefined);
   mockEventQueue.flush.mockResolvedValue(undefined);
   mockEventQueue.advanceDeduplication.mockReturnValue(undefined);
   mockEventQueue.clear.mockReturnValue(undefined);
@@ -691,7 +695,7 @@ describe('FormoAnalytics', () => {
 
       expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
       expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
-      expect(mockEventQueue.advanceDeduplication).toHaveBeenCalledTimes(1);
+      expect(mockEventManager.advanceDeduplication).toHaveBeenCalledTimes(1);
     });
 
     it('should filter chain-scoped events after reset', async () => {

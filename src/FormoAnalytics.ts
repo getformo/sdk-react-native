@@ -117,7 +117,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     });
 
     // Initialize event manager
-    this.eventManager = new EventManager(this.eventQueue, options);
+    this.eventManager = new EventManager(
+      this.eventQueue,
+      options,
+      () => !this.hasOptedOutTracking()
+    );
 
     // Check consent status
     if (this.hasOptedOutTracking()) {
@@ -396,7 +400,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /** Reset user and wallet state, preserving device identity and attribution. */
   public reset(): void {
-    this.eventQueue.advanceDeduplication();
+    this.eventManager.advanceDeduplication();
     this.walletGeneration++;
     this.chainGeneration++;
     this.currentUserId = undefined;
@@ -782,7 +786,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   public optOutTracking(): void {
     logger.info("Opting out of tracking");
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
-    this.eventQueue.clear();
+    this.eventManager.clear();
     this.reset();
     // Consent withdrawal clears device identity and attribution too.
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
