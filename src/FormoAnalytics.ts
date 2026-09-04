@@ -40,7 +40,7 @@ import {
   TransactionStatus,
 } from "./types";
 import { validateAddress } from "./utils";
-import { parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
+import { clearTrafficSource, parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
 
@@ -60,6 +60,9 @@ export class FormoAnalytics implements IFormoAnalytics {
   private crashReporter?: CrashReporter;
   private initialDeepLinkUrl?: string;
   private linkingSubscription?: EmitterSubscription;
+  private consentGeneration = 0;
+  private walletGeneration = 0;
+  private chainGeneration = 0;
 
   config: Config;
   currentChainId?: ChainID;
@@ -115,7 +118,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     });
 
     // Initialize event manager
-    this.eventManager = new EventManager(this.eventQueue, options);
+    this.eventManager = new EventManager(
+      this.eventQueue,
+      options,
+      () => !this.hasOptedOutTracking()
+    );
 
     // Check consent status
     if (this.hasOptedOutTracking()) {
@@ -183,9 +190,13 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     if (analytics.isAttributionEnabled("installReferrer")) {
       try {
+        const generation = analytics.consentGeneration;
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
+          canCapture: () =>
+            generation === analytics.consentGeneration &&
+            !analytics.hasOptedOutTracking(),
         });
       } catch (error) {
         logger.debug("FormoAnalytics: install referrer capture failed", error);
@@ -238,8 +249,13 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   private async startDeepLinkCapture(): Promise<void> {
     try {
+      const generation = this.consentGeneration;
       const url = await Linking.getInitialURL();
-      if (url) {
+      if (
+        url &&
+        generation === this.consentGeneration &&
+        !this.hasOptedOutTracking()
+      ) {
         if (this.isAttributionEnabled("deeplinks")) {
           this.setTrafficSourceFromUrl(url);
         }
@@ -254,7 +270,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
-      if (!event?.url) return;
+      if (!event?.url || this.hasOptedOutTracking()) return;
       // Each behaviour checks its own flag: the hook may exist because only one
       // of them is enabled.
       if (this.isAttributionEnabled("deeplinks")) {
@@ -378,6 +394,7 @@ export class FormoAnalytics implements IFormoAnalytics {
    * ```
    */
   public setTrafficSourceFromUrl(url: string): void {
+    if (this.hasOptedOutTracking()) return;
     const trafficSource = parseTrafficSource(
       url,
       this.options.referral?.queryParams,
@@ -390,12 +407,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     logger.debug("Traffic source set from URL:", trafficSource);
   }
 
-  /**
-   * Reset the current user session
-   */
+  /** Reset user and wallet state, preserving device identity and attribution. */
   public reset(): void {
+    this.eventManager.advanceDeduplication();
+    this.walletGeneration++;
+    this.chainGeneration++;
     this.currentUserId = undefined;
-    storage().remove(LOCAL_ANONYMOUS_ID_KEY);
+    this.currentAddress = undefined;
+    this.currentChainId = undefined;
     storage().remove(LOCAL_SESSION_ID_KEY);
     storage().remove(LOCAL_SESSION_LAST_ACTIVITY_KEY);
     storage().remove(SESSION_USER_ID_KEY);
@@ -458,6 +477,9 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn(`Connect: Invalid address provided ("${address}")`);
       return;
     }
+    if (this.hasOptedOutTracking()) return;
+    const walletGeneration = ++this.walletGeneration;
+    const chainGeneration = ++this.chainGeneration;
 
     // Track event before updating state so connect events TO excluded chains are tracked
     await this.trackEvent(
@@ -468,8 +490,14 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    this.currentChainId = chainId;
-    this.currentAddress = validatedAddress;
+    if (!this.hasOptedOutTracking()) {
+      if (walletGeneration === this.walletGeneration) {
+        this.currentAddress = validatedAddress;
+      }
+      if (chainGeneration === this.chainGeneration) {
+        this.currentChainId = chainId;
+      }
+    }
   }
 
   /**
@@ -481,6 +509,8 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    const walletGeneration = ++this.walletGeneration;
+    const chainGeneration = ++this.chainGeneration;
     const chainId = params?.chainId || this.currentChainId;
     const address = params?.address || this.currentAddress;
 
@@ -500,8 +530,8 @@ export class FormoAnalytics implements IFormoAnalytics {
       callback
     );
 
-    this.currentAddress = undefined;
-    this.currentChainId = undefined;
+    if (walletGeneration === this.walletGeneration) this.currentAddress = undefined;
+    if (chainGeneration === this.chainGeneration) this.currentChainId = undefined;
   }
 
   /**
@@ -521,22 +551,37 @@ export class FormoAnalytics implements IFormoAnalytics {
       logger.warn("FormoAnalytics::chain: chainId must be a valid number");
       return;
     }
-    if (!address && !this.currentAddress) {
-      logger.warn("FormoAnalytics::chain: address was empty and no previous address recorded");
+    const validAddress = address
+      ? this.validateAndChecksumAddress(address, chainId)
+      : this.currentAddress;
+    if (!validAddress) {
+      logger.warn("FormoAnalytics::chain: address is invalid or unavailable");
       return;
     }
+    if (this.hasOptedOutTracking()) return;
+    const walletGeneration = address
+      ? ++this.walletGeneration
+      : this.walletGeneration;
+    const chainGeneration = ++this.chainGeneration;
 
     // Track event before updating currentChainId so shouldTrack uses the previous chain
     // This ensures chain change events TO excluded chains are still tracked
     await this.trackEvent(
       EventType.CHAIN,
-      { chainId, address: address || this.currentAddress },
+      { chainId, address: validAddress },
       properties,
       context,
       callback
     );
 
-    this.currentChainId = chainId;
+    if (!this.hasOptedOutTracking()) {
+      if (chainGeneration === this.chainGeneration) {
+        this.currentChainId = chainId;
+      }
+      if (address && walletGeneration === this.walletGeneration) {
+        this.currentAddress = validAddress;
+      }
+    }
   }
 
   /**
@@ -649,6 +694,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     try {
       const { userId, address, providerName, rdns } = params;
       logger.info("Identify", address, userId, providerName, rdns);
+      if (this.hasOptedOutTracking()) return;
 
       let validAddress: Address | undefined = undefined;
       if (address) {
@@ -657,10 +703,12 @@ export class FormoAnalytics implements IFormoAnalytics {
           logger.warn(`Identify: Invalid address provided ("${address}")`);
           return;
         }
+        this.walletGeneration++;
         this.currentAddress = validAddress;
         // Note: validateAddress returns Solana addresses unchanged (Base58, case-sensitive)
         // and EVM addresses checksummed.
       } else {
+        this.walletGeneration++;
         this.currentAddress = undefined;
       }
 
@@ -707,6 +755,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    if (this.hasOptedOutTracking()) return;
     if (this.session.isWalletDetected(rdns)) {
       logger.warn(`Detect: Wallet ${providerName} already detected in this session`);
       return;
@@ -746,8 +795,13 @@ export class FormoAnalytics implements IFormoAnalytics {
   public optOutTracking(): void {
     logger.info("Opting out of tracking");
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
-    this.eventQueue.clear();
+    this.consentGeneration++;
+    this.initialDeepLinkUrl = undefined;
+    this.eventManager.clear();
     this.reset();
+    // Consent withdrawal clears device identity and attribution too.
+    storage().remove(LOCAL_ANONYMOUS_ID_KEY);
+    clearTrafficSource();
     logger.info("Successfully opted out of tracking");
   }
 
@@ -853,7 +907,18 @@ export class FormoAnalytics implements IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
     try {
-      if (!this.shouldTrack()) {
+      const payloadChainId = payload?.chainId as ChainID | undefined;
+      const validPayloadChainId =
+        typeof payloadChainId === "number" &&
+        Number.isFinite(payloadChainId) &&
+        payloadChainId > 0
+          ? payloadChainId
+          : undefined;
+      const eventChainId =
+        type === EventType.CONNECT || type === EventType.CHAIN
+          ? this.currentChainId
+          : validPayloadChainId;
+      if (!this.shouldTrack(eventChainId)) {
         logger.info(`Skipping ${type} event due to tracking configuration`);
         return;
       }
@@ -884,7 +949,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   /**
    * Check if tracking should be enabled
    */
-  private shouldTrack(): boolean {
+  private shouldTrack(eventChainId?: ChainID): boolean {
     // Check consent
     if (this.hasOptedOutTracking()) {
       return false;
@@ -902,11 +967,13 @@ export class FormoAnalytics implements IFormoAnalytics {
       !Array.isArray(this.options.tracking)
     ) {
       const { excludeChains = [] } = this.options.tracking as TrackingOptions;
+      const chainId = eventChainId ?? this.currentChainId;
 
       if (
         excludeChains.length > 0 &&
-        this.currentChainId &&
-        excludeChains.includes(this.currentChainId)
+        chainId !== undefined &&
+        chainId !== null &&
+        excludeChains.includes(chainId)
       ) {
         return false;
       }

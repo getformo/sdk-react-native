@@ -120,6 +120,7 @@ export class EventQueue implements IEventQueue {
    * after consent was withdrawn.
    */
   private generation = 0;
+  private deduplicationGeneration = 0;
   /**
    * The in-progress teardown, if any. cleanup() is public and the provider can
    * call it more than once; a second run would start its own drain flush that
@@ -187,13 +188,25 @@ export class EventQueue implements IEventQueue {
   /**
    * Generate message ID for deduplication
    */
-  private async generateMessageId(event: IFormoEvent): Promise<string> {
+  private async generateMessageId(
+    event: IFormoEvent,
+    deduplicationGeneration = 0
+  ): Promise<string> {
     const formattedTimestamp = toDateHourMinute(
       new Date(event.original_timestamp)
     );
     const eventForHashing = { ...event, original_timestamp: formattedTimestamp };
-    const eventString = JSON.stringify(eventForHashing);
+    const eventString = JSON.stringify(eventForHashing) +
+      (deduplicationGeneration ? `:${deduplicationGeneration}` : "");
     return hash(eventString);
+  }
+
+  public advanceDeduplication(): void {
+    this.deduplicationGeneration++;
+  }
+
+  public getDeduplicationGeneration(): number {
+    return this.deduplicationGeneration;
   }
 
   /**
@@ -210,7 +223,8 @@ export class EventQueue implements IEventQueue {
    */
   async enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    deduplicationGeneration = this.deduplicationGeneration
   ): Promise<void> {
     if (this.closed) {
       logger.debug("EventQueue: Ignoring event enqueued after cleanup");
@@ -220,7 +234,10 @@ export class EventQueue implements IEventQueue {
     callback = callback || noop;
 
     const generation = this.generation;
-    const message_id = await this.generateMessageId(event);
+    const message_id = await this.generateMessageId(
+      event,
+      deduplicationGeneration
+    );
 
     // Hashing is async, so cleanup() can complete while this call is suspended
     // above. Re-check, or a caller that did not await enqueue() would resume
@@ -549,6 +566,7 @@ export class EventQueue implements IEventQueue {
     this.generation++;
     this.queue = [];
     this.payloadHashes.clear();
+    this.flushed = false;
 
     if (this.timer) {
       clearTimeout(this.timer);

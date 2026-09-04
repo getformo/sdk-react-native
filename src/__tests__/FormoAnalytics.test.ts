@@ -16,10 +16,13 @@ const mockStorageManager = {
 
 const mockEventManager = {
   addEvent: jest.fn(),
+  advanceDeduplication: jest.fn(),
+  clear: jest.fn(),
 };
 
 const mockEventQueue = {
   flush: jest.fn(),
+  advanceDeduplication: jest.fn(),
   clear: jest.fn(),
   cleanup: jest.fn(),
 };
@@ -107,7 +110,10 @@ const setupMocks = () => {
 
   // Event mocks
   mockEventManager.addEvent.mockResolvedValue(undefined);
+  mockEventManager.advanceDeduplication.mockReturnValue(undefined);
+  mockEventManager.clear.mockReturnValue(undefined);
   mockEventQueue.flush.mockResolvedValue(undefined);
+  mockEventQueue.advanceDeduplication.mockReturnValue(undefined);
   mockEventQueue.clear.mockReturnValue(undefined);
   mockEventQueue.cleanup.mockResolvedValue(undefined);
 
@@ -215,6 +221,37 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentChainId).toBe(1);
       expect(analytics.currentAddress).toBeDefined();
     });
+
+    it('should not restore wallet state after reset while connect is pending', async () => {
+      let finish!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finish = resolve; })
+      );
+
+      const pending = analytics.connect({
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+      analytics.reset();
+      finish();
+      await pending;
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+    });
+
+    it('should not learn wallet state while opted out', async () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      await analytics.connect({
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('disconnect()', () => {
@@ -273,6 +310,67 @@ describe('FormoAnalytics', () => {
 
       expect(analytics.currentChainId).toBe(137);
     });
+
+    it('should not restore chain state after reset while a change is pending', async () => {
+      let finish!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finish = resolve; })
+      );
+
+      const pending = analytics.chain({ chainId: 137 });
+      analytics.reset();
+      finish();
+      await pending;
+
+      expect(analytics.currentChainId).toBeUndefined();
+    });
+
+    it('should retain the address when a chain change overtakes connect', async () => {
+      let finishConnect!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finishConnect = resolve; })
+      );
+      analytics.currentAddress = undefined;
+      analytics.currentChainId = undefined;
+      const address = '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2';
+
+      const pendingConnect = analytics.connect({ chainId: 1, address });
+      await analytics.chain({ chainId: 137, address });
+      finishConnect();
+      await pendingConnect;
+
+      expect((analytics.currentAddress as string | undefined)?.toLowerCase()).toBe(
+        address.toLowerCase()
+      );
+      expect(analytics.currentChainId).toBe(137);
+    });
+
+    it('should retain a pending chain assignment across identify', async () => {
+      let finishChain!: () => void;
+      mockEventManager.addEvent.mockReturnValueOnce(
+        new Promise<void>((resolve) => { finishChain = resolve; })
+      );
+      analytics.currentAddress = undefined;
+      analytics.currentChainId = undefined;
+      const address = '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2';
+
+      const pendingChain = analytics.chain({ chainId: 137, address });
+      await analytics.identify({ address });
+      finishChain();
+      await pendingChain;
+
+      expect(analytics.currentChainId).toBe(137);
+    });
+
+    it('should reject an invalid address before updating chain state', async () => {
+      await analytics.chain({ chainId: 137, address: 'not-an-address' });
+
+      expect(analytics.currentAddress).toBe(
+        '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2'
+      );
+      expect(analytics.currentChainId).toBe(1);
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('signature()', () => {
@@ -285,6 +383,20 @@ describe('FormoAnalytics', () => {
       });
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+
+    it('should treat chainId 0 as unscoped for exclusions', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+
+      await analytics.signature({
+        status: SignatureStatus.REQUESTED,
+        chainId: 0,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+        message: 'test message',
+      });
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('should track signature without chainId', async () => {
@@ -568,10 +680,84 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentUserId).toBeUndefined();
     });
 
-    it('should remove storage keys', () => {
+    it('should clear the active wallet', () => {
+      analytics.currentAddress = '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf';
+      analytics.currentChainId = 1;
+
       analytics.reset();
 
-      expect(mockStorageInstance.remove).toHaveBeenCalled();
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentChainId).toBeUndefined();
+    });
+
+    it('should start a new session but keep the anonymous id', () => {
+      analytics.reset();
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
+      expect(mockEventManager.advanceDeduplication).toHaveBeenCalledTimes(1);
+    });
+
+    it('should filter chain-scoped events after reset', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.reset();
+
+      await analytics.transaction({
+        status: TransactionStatus.STARTED,
+        chainId: 1,
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('should not bind unscoped events to the cleared chain', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+      analytics.reset();
+
+      await analytics.track('after reset');
+
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+  });
+
+  describe('optOutTracking()', () => {
+    it('should clear the anonymous id and the stored attribution as well', () => {
+      analytics.optOutTracking();
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('anonymous_id');
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('traffic_source');
+    });
+
+    it('reset() alone keeps the stored attribution', () => {
+      analytics.reset();
+
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('traffic_source');
+    });
+
+    it('does not store attribution while opted out', () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      analytics.setTrafficSourceFromUrl('myapp://home?utm_source=test');
+
+      expect(mockStorageInstance.set).not.toHaveBeenCalledWith(
+        'traffic_source',
+        expect.anything()
+      );
+    });
+
+    it('does not learn identity markers while opted out', async () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      await analytics.identify({
+        address: '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2',
+      });
+      await analytics.detect({ providerName: 'MetaMask', rdns: 'io.metamask' });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(mockSession.markWalletIdentified).not.toHaveBeenCalled();
+      expect(mockSession.markWalletDetected).not.toHaveBeenCalled();
     });
   });
 

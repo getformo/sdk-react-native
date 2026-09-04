@@ -10,11 +10,15 @@ import {
   ChainID,
 } from "../../types";
 
+export type EventCreationGuard = () => boolean;
+export const EVENT_CREATION_CANCELLED = Symbol("event-creation-cancelled");
+
 export interface IEventFactory {
   create(
     event: APIEvent,
     address?: Address,
-    userId?: string
+    userId?: string,
+    shouldContinue?: EventCreationGuard
   ): Promise<IFormoEvent>;
 
   generateScreenEvent(
@@ -93,14 +97,19 @@ export interface IEventFactory {
 
 export interface IEventManager {
   addEvent(event: APIEvent, address?: Address, userId?: string): Promise<void>;
+  advanceDeduplication(): void;
+  clear(): void;
 }
 
 export interface IEventQueue {
   enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    deduplicationGeneration?: number
   ): Promise<void>;
   flush(callback?: (...args: unknown[]) => void): Promise<void>;
+  getDeduplicationGeneration(): number;
+  advanceDeduplication(): void;
   clear(): void;
   cleanup(): Promise<void>;
 }
