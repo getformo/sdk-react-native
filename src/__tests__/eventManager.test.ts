@@ -36,18 +36,16 @@ describe("EventManager consent boundary", () => {
   });
 
   it("captures deduplication before enrichment", async () => {
+    let generation = 0;
     let release!: (event: Record<string, unknown>) => void;
     const created = new Promise<Record<string, unknown>>((resolve) => {
       release = resolve;
     });
     const queue = {
       enqueue: jest.fn().mockResolvedValue(undefined),
-      getDeduplicationGeneration: jest
-        .fn()
-        .mockReturnValueOnce(0)
-        .mockReturnValueOnce(1),
+      getDeduplicationGeneration: jest.fn(() => generation),
       clear: jest.fn(),
-      advanceDeduplication: jest.fn(),
+      advanceDeduplication: jest.fn(() => generation++),
     } as unknown as IEventQueue;
     const manager = new EventManager(queue);
     jest.spyOn(manager.eventFactory, "create").mockReturnValue(created as any);
