@@ -101,6 +101,7 @@ export interface IEventQueue {
     callback?: (...args: unknown[]) => void
   ): Promise<void>;
   flush(callback?: (...args: unknown[]) => void): Promise<void>;
+  advanceDeduplication(): void;
   clear(): void;
   cleanup(): Promise<void>;
 }

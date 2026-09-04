@@ -526,6 +526,35 @@ describe("EventQueue", () => {
     });
   });
 
+  describe("dedup across reset()", () => {
+    it("keeps the buffered event and admits the same payload after reset", async () => {
+      const queue = makeQueue({ flushAt: 20 });
+      const generateMessageId = jest
+        .spyOn(queue as any, "generateMessageId")
+        .mockImplementation(async (_event: IFormoEvent, generation = 0) =>
+          `message-${generation}`
+        );
+
+      await queue.enqueue(makeEvent(0));
+      await settle();
+      await queue.enqueue(makeEvent(1));
+      queue.advanceDeduplication();
+      await queue.enqueue(makeEvent(1));
+      await queue.flush();
+      await settle();
+
+      const resetBatch = fetchMock.mock.calls
+        .flatMap(([, init]) => JSON.parse(init.body as string))
+        .filter((event) => event.event === "event-1");
+      expect(resetBatch.map((event) => event.message_id)).toEqual([
+        "message-0",
+        "message-1",
+      ]);
+      generateMessageId.mockRestore();
+      await queue.cleanup();
+    });
+  });
+
   describe("enqueue racing clear()", () => {
     it("drops an event whose hashing was still pending when the user opted out", async () => {
       const queue = makeQueue();

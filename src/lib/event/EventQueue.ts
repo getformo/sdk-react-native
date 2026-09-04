@@ -120,6 +120,7 @@ export class EventQueue implements IEventQueue {
    * after consent was withdrawn.
    */
   private generation = 0;
+  private deduplicationGeneration = 0;
   /**
    * The in-progress teardown, if any. cleanup() is public and the provider can
    * call it more than once; a second run would start its own drain flush that
@@ -187,13 +188,21 @@ export class EventQueue implements IEventQueue {
   /**
    * Generate message ID for deduplication
    */
-  private async generateMessageId(event: IFormoEvent): Promise<string> {
+  private async generateMessageId(
+    event: IFormoEvent,
+    deduplicationGeneration = 0
+  ): Promise<string> {
     const formattedTimestamp = toDateHourMinute(
       new Date(event.original_timestamp)
     );
     const eventForHashing = { ...event, original_timestamp: formattedTimestamp };
-    const eventString = JSON.stringify(eventForHashing);
+    const eventString = JSON.stringify(eventForHashing) +
+      (deduplicationGeneration ? `:${deduplicationGeneration}` : "");
     return hash(eventString);
+  }
+
+  public advanceDeduplication(): void {
+    this.deduplicationGeneration++;
   }
 
   /**
@@ -220,7 +229,11 @@ export class EventQueue implements IEventQueue {
     callback = callback || noop;
 
     const generation = this.generation;
-    const message_id = await this.generateMessageId(event);
+    const deduplicationGeneration = this.deduplicationGeneration;
+    const message_id = await this.generateMessageId(
+      event,
+      deduplicationGeneration
+    );
 
     // Hashing is async, so cleanup() can complete while this call is suspended
     // above. Re-check, or a caller that did not await enqueue() would resume

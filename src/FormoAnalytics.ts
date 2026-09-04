@@ -396,6 +396,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /** Reset user and wallet state, preserving device identity and attribution. */
   public reset(): void {
+    this.eventQueue.advanceDeduplication();
     this.walletGeneration++;
     this.chainGeneration++;
     this.currentUserId = undefined;
