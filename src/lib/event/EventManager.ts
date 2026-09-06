@@ -1,6 +1,6 @@
 import { Address, APIEvent, Options } from "../../types";
 import { logger } from "../logger";
-import { EventFactory } from "./EventFactory";
+import { EVENT_CREATION_CANCELLED, EventFactory } from "./EventFactory";
 import { IEventFactory, IEventManager, IEventQueue } from "./types";
 import { isBlockedAddress } from "../../utils/address";
 
@@ -12,9 +12,13 @@ class EventManager implements IEventManager {
   eventQueue: IEventQueue;
   eventFactory: IEventFactory;
 
-  constructor(eventQueue: IEventQueue, options?: Options) {
+  constructor(
+    eventQueue: IEventQueue,
+    options?: Options,
+    canCreate: () => boolean = () => true
+  ) {
     this.eventQueue = eventQueue;
-    this.eventFactory = new EventFactory(options);
+    this.eventFactory = new EventFactory(options, canCreate);
   }
 
   /**
@@ -26,7 +30,16 @@ class EventManager implements IEventManager {
     userId?: string
   ): Promise<void> {
     const { callback, ..._event } = event;
-    const formoEvent = await this.eventFactory.create(_event, address, userId);
+    const generation = this.eventQueue.getGeneration();
+    let formoEvent;
+    try {
+      formoEvent = await this.eventFactory.create(_event, address, userId);
+    } catch (error) {
+      if (error === EVENT_CREATION_CANCELLED) return;
+      throw error;
+    }
+
+    if (this.eventQueue.getGeneration() !== generation) return;
 
     // Check if the final event has a blocked address
     if (formoEvent.address && isBlockedAddress(formoEvent.address)) {
@@ -43,7 +56,7 @@ class EventManager implements IEventManager {
         logger.info(`Events sent successfully: ${(data as unknown[])?.length ?? 0} events`);
       }
       callback?.(err, _, data);
-    });
+    }, generation);
   }
 }
 

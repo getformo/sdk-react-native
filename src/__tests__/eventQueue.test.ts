@@ -316,6 +316,18 @@ describe("EventQueue", () => {
   });
 
   describe("clear() during an in-flight flush", () => {
+    it("rejects work that began before clear", async () => {
+      const queue = makeQueue();
+      const generation = queue.getGeneration();
+
+      queue.clear();
+      await queue.enqueue(makeEvent(1), undefined, generation);
+      await settle();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      await queue.cleanup();
+    });
+
     it("does not resurrect events cleared while a batch was in flight", async () => {
       let releaseSend: (value: { ok: boolean; status: number }) => void;
       fetchMock.mockReturnValueOnce(

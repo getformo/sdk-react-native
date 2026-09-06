@@ -99,6 +99,25 @@ describe("Deep Link Opened", () => {
     expect(trackedEvents).not.toContain("Deep Link Opened");
   });
 
+  it("discards an initial link after consent changes", async () => {
+    const analytics = await init();
+    const attribution = jest.spyOn(analytics, "setTrafficSourceFromUrl");
+    let release!: (url: string) => void;
+    getInitialURL.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        release = resolve;
+      })
+    );
+
+    const pending = (analytics as any).startDeepLinkCapture();
+    analytics.optOutTracking();
+    analytics.optInTracking();
+    release("myapp://product?utm_source=twitter");
+    await pending;
+
+    expect(attribution).not.toHaveBeenCalled();
+  });
+
   it("still emits the event when only attribution is disabled", async () => {
     // The two flags are independent: attribution.deeplinks parses UTMs into
     // context, autocapture.deepLinks emits the event. Turning attribution off

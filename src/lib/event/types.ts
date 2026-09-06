@@ -96,9 +96,11 @@ export interface IEventManager {
 }
 
 export interface IEventQueue {
+  getGeneration(): number;
   enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    generation?: number
   ): Promise<void>;
   flush(callback?: (...args: unknown[]) => void): Promise<void>;
   clear(): void;

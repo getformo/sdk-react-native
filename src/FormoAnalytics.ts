@@ -62,6 +62,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private linkingSubscription?: EmitterSubscription;
   private walletGeneration = 0;
   private chainGeneration = 0;
+  private consentGeneration = 0;
 
   config: Config;
   currentChainId?: ChainID;
@@ -117,7 +118,11 @@ export class FormoAnalytics implements IFormoAnalytics {
     });
 
     // Initialize event manager
-    this.eventManager = new EventManager(this.eventQueue, options);
+    this.eventManager = new EventManager(
+      this.eventQueue,
+      options,
+      () => !this.hasOptedOutTracking()
+    );
 
     // Check consent status
     if (this.hasOptedOutTracking()) {
@@ -186,10 +191,13 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     if (analytics.isAttributionEnabled("installReferrer")) {
       try {
+        const consentGeneration = analytics.consentGeneration;
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
-          canCapture: () => !analytics.hasOptedOutTracking(),
+          canCapture: () =>
+            analytics.consentGeneration === consentGeneration &&
+            !analytics.hasOptedOutTracking(),
         });
       } catch (error) {
         logger.debug("FormoAnalytics: install referrer capture failed", error);
@@ -241,9 +249,14 @@ export class FormoAnalytics implements IFormoAnalytics {
    * so attribution is in storage before the first lifecycle event fires.
    */
   private async startDeepLinkCapture(): Promise<void> {
+    const consentGeneration = this.consentGeneration;
     try {
       const url = await Linking.getInitialURL();
-      if (url && !this.hasOptedOutTracking()) {
+      if (
+        url &&
+        this.consentGeneration === consentGeneration &&
+        !this.hasOptedOutTracking()
+      ) {
         if (this.isAttributionEnabled("deeplinks")) {
           this.setTrafficSourceFromUrl(url);
         }
@@ -781,6 +794,8 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public optOutTracking(): void {
     logger.info("Opting out of tracking");
+    this.consentGeneration++;
+    this.initialDeepLinkUrl = undefined;
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
     this.eventQueue.clear();
     this.reset();

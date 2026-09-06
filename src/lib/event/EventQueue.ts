@@ -210,16 +210,17 @@ export class EventQueue implements IEventQueue {
    */
   async enqueue(
     event: IFormoEvent,
-    callback?: (...args: unknown[]) => void
+    callback?: (...args: unknown[]) => void,
+    generation = this.generation
   ): Promise<void> {
     if (this.closed) {
       logger.debug("EventQueue: Ignoring event enqueued after cleanup");
       return;
     }
 
-    callback = callback || noop;
+    if (this.generation !== generation) return;
 
-    const generation = this.generation;
+    callback = callback || noop;
     const message_id = await this.generateMessageId(event);
 
     // Hashing is async, so cleanup() can complete while this call is suspended
@@ -556,6 +557,10 @@ export class EventQueue implements IEventQueue {
     }
 
     logger.debug("EventQueue: Cleared all pending events");
+  }
+
+  public getGeneration(): number {
+    return this.generation;
   }
 
   /**
