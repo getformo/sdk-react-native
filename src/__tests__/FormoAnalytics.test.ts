@@ -170,6 +170,14 @@ describe('FormoAnalytics', () => {
 
       expect(mockStorageManager.initialize).toHaveBeenCalledWith(mockAsyncStorage);
     });
+
+    it('clears stored attribution for a persisted opt-out', async () => {
+      (getConsentFlag as jest.Mock).mockReturnValue('true');
+
+      await FormoAnalytics.init('my-key');
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('traffic_source');
+    });
   });
 
   describe('connect()', () => {

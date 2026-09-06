@@ -121,6 +121,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     // Check consent status
     if (this.hasOptedOutTracking()) {
+      clearTrafficSource();
       logger.info("User has previously opted out of tracking");
     }
 
