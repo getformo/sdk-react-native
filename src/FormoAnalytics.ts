@@ -415,6 +415,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     this.currentUserId = undefined;
     this.currentAddress = undefined;
     this.currentChainId = undefined;
+    this.wagmiHandler?.clearIdentity();
     storage().remove(LOCAL_SESSION_ID_KEY);
     storage().remove(LOCAL_SESSION_LAST_ACTIVITY_KEY);
     storage().remove(SESSION_USER_ID_KEY);

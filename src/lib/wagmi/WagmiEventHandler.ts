@@ -46,6 +46,7 @@ interface IFormoAnalyticsInstance {
   isAutocaptureEnabled(
     eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain"
   ): boolean;
+  hasOptedOutTracking(): boolean;
 }
 
 export class WagmiEventHandler {
@@ -163,6 +164,12 @@ export class WagmiEventHandler {
       const address = this.getConnectedAddress(state);
       const chainId = state.chainId;
 
+      if (this.formo.hasOptedOutTracking()) {
+        this.clearIdentity();
+        this.trackingState.lastStatus = status;
+        return;
+      }
+
       logger.info("WagmiEventHandler: Status changed", {
         status,
         prevStatus,
@@ -216,6 +223,11 @@ export class WagmiEventHandler {
     chainId: number | undefined,
     prevChainId: number | undefined
   ): Promise<void> {
+    if (this.formo.hasOptedOutTracking()) {
+      this.clearIdentity();
+      return;
+    }
+
     // Skip if no change, chainId is undefined, or this is initial connection (prevChainId undefined)
     if (chainId === prevChainId || chainId === undefined || prevChainId === undefined) {
       return;
@@ -546,6 +558,11 @@ export class WagmiEventHandler {
 
     const connection = state.connections.get(state.current);
     return connection?.connector.id;
+  }
+
+  public clearIdentity(): void {
+    this.trackingState.lastAddress = undefined;
+    this.trackingState.lastChainId = undefined;
   }
 
   /**

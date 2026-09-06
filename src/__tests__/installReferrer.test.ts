@@ -45,7 +45,8 @@ jest.mock(
     PlayInstallReferrer: {
       getInstallReferrerInfo: mockGetInstallReferrerInfo,
     },
-  })
+  }),
+  { virtual: true }
 );
 
 import { captureInstallReferrer } from "../lib/installReferrer";
