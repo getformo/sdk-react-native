@@ -122,6 +122,12 @@ export class WagmiEventHandler {
     status: WagmiState["status"],
     prevStatus: WagmiState["status"]
   ): Promise<void> {
+    if (this.formo.hasOptedOutTracking()) {
+      this.clearIdentity();
+      this.trackingState.lastStatus = status;
+      return;
+    }
+
     if (this.trackingState.isProcessing) {
       // Limit queue size to prevent unbounded growth during rapid status changes
       if (this.pendingStatusChanges.length >= WagmiEventHandler.MAX_PENDING_STATUS_CHANGES) {
