@@ -563,6 +563,7 @@ export class WagmiEventHandler {
   public clearIdentity(): void {
     this.trackingState.lastAddress = undefined;
     this.trackingState.lastChainId = undefined;
+    this.pendingStatusChanges = [];
   }
 
   /**

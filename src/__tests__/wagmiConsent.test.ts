@@ -56,4 +56,29 @@ describe("Wagmi consent boundary", () => {
     expect((handler as any).trackingState.lastAddress).toBeUndefined();
     expect((handler as any).trackingState.lastChainId).toBeUndefined();
   });
+
+  it("drops status changes queued before reset", async () => {
+    const { formo, handler } = makeHandler(() => false);
+    let release!: () => void;
+    formo.connect.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+    );
+
+    const processing = (handler as any).handleStatusChange(
+      "connected",
+      "connecting"
+    );
+    await Promise.resolve();
+    await (handler as any).handleStatusChange("connected", "disconnected");
+
+    handler.clearIdentity();
+    release();
+    await processing;
+
+    expect(formo.connect).toHaveBeenCalledTimes(1);
+    expect((handler as any).trackingState.lastAddress).toBeUndefined();
+    expect((handler as any).trackingState.lastChainId).toBeUndefined();
+  });
 });
