@@ -210,11 +210,13 @@ export function synthesizeUserAgent(info: {
  */
 class EventFactory implements IEventFactory {
   private options?: Options;
+  private canCreate: () => boolean;
   /** Memoised device/app identity — see getDeviceInfo(). */
   private deviceInfoPromise?: Promise<DeviceInfoResult>;
 
-  constructor(options?: Options) {
+  constructor(options?: Options, canCreate: () => boolean = () => true) {
     this.options = options;
+    this.canCreate = canCreate;
   }
 
   /**
@@ -508,6 +510,10 @@ class EventFactory implements IEventFactory {
     formoEvent: Partial<IFormoEvent>,
     context?: IFormoEventContext
   ): Promise<IFormoEvent> {
+    if (!this.canCreate()) throw EVENT_CREATION_CANCELLED;
+
+    const anonymousId = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
+    const sessionId = getSessionId();
     const commonEventData: Partial<IFormoEvent> = {
       context: await this.generateContext(context),
       original_timestamp: getCurrentTimeFormatted(),
@@ -517,8 +523,8 @@ class EventFactory implements IEventFactory {
       version: VERSION,
     };
 
-    commonEventData.anonymous_id = generateAnonymousId(LOCAL_ANONYMOUS_ID_KEY);
-    commonEventData.session_id = getSessionId();
+    commonEventData.anonymous_id = anonymousId;
+    commonEventData.session_id = sessionId;
 
     // Handle address - convert undefined to null for consistency
     // Try EVM first, then Solana fallback (chainId is not always present here).
@@ -886,3 +892,4 @@ class EventFactory implements IEventFactory {
 }
 
 export { EventFactory };
+export const EVENT_CREATION_CANCELLED = Symbol("event creation cancelled");

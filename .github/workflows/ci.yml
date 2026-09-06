@@ -149,4 +149,5 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit production dependencies
-        run: pnpm audit --prod
+        # Fail on advisories, not registry outages.
+        run: pnpm audit --prod --ignore-registry-errors

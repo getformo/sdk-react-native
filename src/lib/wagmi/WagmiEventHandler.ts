@@ -46,6 +46,7 @@ interface IFormoAnalyticsInstance {
   isAutocaptureEnabled(
     eventType: "connect" | "disconnect" | "signature" | "transaction" | "chain"
   ): boolean;
+  hasOptedOutTracking(): boolean;
 }
 
 export class WagmiEventHandler {
@@ -121,6 +122,12 @@ export class WagmiEventHandler {
     status: WagmiState["status"],
     prevStatus: WagmiState["status"]
   ): Promise<void> {
+    if (this.formo.hasOptedOutTracking()) {
+      this.clearIdentity();
+      this.trackingState.lastStatus = status;
+      return;
+    }
+
     if (this.trackingState.isProcessing) {
       // Limit queue size to prevent unbounded growth during rapid status changes
       if (this.pendingStatusChanges.length >= WagmiEventHandler.MAX_PENDING_STATUS_CHANGES) {
@@ -162,6 +169,12 @@ export class WagmiEventHandler {
       const state = this.getState();
       const address = this.getConnectedAddress(state);
       const chainId = state.chainId;
+
+      if (this.formo.hasOptedOutTracking()) {
+        this.clearIdentity();
+        this.trackingState.lastStatus = status;
+        return;
+      }
 
       logger.info("WagmiEventHandler: Status changed", {
         status,
@@ -216,6 +229,11 @@ export class WagmiEventHandler {
     chainId: number | undefined,
     prevChainId: number | undefined
   ): Promise<void> {
+    if (this.formo.hasOptedOutTracking()) {
+      this.clearIdentity();
+      return;
+    }
+
     // Skip if no change, chainId is undefined, or this is initial connection (prevChainId undefined)
     if (chainId === prevChainId || chainId === undefined || prevChainId === undefined) {
       return;
@@ -546,6 +564,12 @@ export class WagmiEventHandler {
 
     const connection = state.connections.get(state.current);
     return connection?.connector.id;
+  }
+
+  public clearIdentity(): void {
+    this.trackingState.lastAddress = undefined;
+    this.trackingState.lastChainId = undefined;
+    this.pendingStatusChanges = [];
   }
 
   /**
