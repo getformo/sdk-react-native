@@ -35,6 +35,23 @@ class EventManager implements IEventManager {
       idempotencyKey?: string;
     };
     const generation = this.eventQueue.getGeneration();
+
+    // Taken before the enrichment await, from the caller's input as it is
+    // now: a properties object the app mutates while enrichment is pending
+    // must not fingerprint the event under values it did not carry.
+    // Custom events are fingerprinted on what the caller passed, so SDK
+    // context that changes between two identical calls does not split them.
+    const dedupKey =
+      event.type === "track"
+        ? hash(
+            JSON.stringify({
+              event: _event,
+              address: address ?? null,
+              userId: userId ?? null,
+            })
+          )
+        : undefined;
+
     let formoEvent;
     try {
       formoEvent = await this.eventFactory.create(_event, address, userId);
@@ -52,19 +69,6 @@ class EventManager implements IEventManager {
       );
       return;
     }
-
-    // Custom events are fingerprinted on what the caller passed, so SDK
-    // context that changes between two identical calls does not split them.
-    const dedupKey =
-      event.type === "track"
-        ? hash(
-            JSON.stringify({
-              event: _event,
-              address: address ?? null,
-              userId: userId ?? null,
-            })
-          )
-        : undefined;
 
     await this.eventQueue.enqueue(
       formoEvent,

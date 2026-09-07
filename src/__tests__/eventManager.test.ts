@@ -81,6 +81,20 @@ describe("EventManager custom-event identity", () => {
     expect(second![3].dedupKey).toBe(first![3].dedupKey);
   });
 
+  it("fingerprints the caller input as it was when track() was called", async () => {
+    const { queue, manager } = makeManager();
+    const properties: Record<string, unknown> = { market: "ZEC", volume: 3571 };
+
+    const first = manager.addEvent({ type: "track", event: "Order Placed", properties });
+    // The app reuses and mutates the object while enrichment is pending.
+    properties.volume = 9999;
+    await first;
+    await manager.addEvent({ type: "track", event: "Order Placed", properties: { market: "ZEC", volume: 3571 } });
+
+    const [a, b] = enqueueCalls(queue);
+    expect(b![3].dedupKey).toBe(a![3].dedupKey);
+  });
+
   it("keeps caller-supplied context in the fingerprint", async () => {
     const { queue, manager } = makeManager();
     const call = { type: "track" as const, event: "Order Placed", properties: { market: "ZEC" } };

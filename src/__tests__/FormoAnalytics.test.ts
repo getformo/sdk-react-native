@@ -515,10 +515,31 @@ describe('FormoAnalytics', () => {
       expect(event.properties).toBe(properties);
     });
 
-    it('canonicalizes a finite numeric idempotency_key', async () => {
+    it('canonicalizes a safe integer idempotency_key', async () => {
       await analytics.track('purchase', { idempotency_key: 42 });
 
       expect(mockEventManager.addEvent.mock.calls.at(-1)?.[0].idempotencyKey).toBe('42');
+    });
+
+    it('rejects numbers that cannot name one id exactly', async () => {
+      mockEventManager.addEvent.mockClear();
+
+      // 2^53 and 2^53 + 1 are the same JavaScript number.
+      await analytics.track('purchase', { idempotency_key: 9007199254740993 });
+      await analytics.track('purchase', { idempotency_key: 1.5 });
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('logs instead of rejecting when the property bag throws on access', async () => {
+      mockEventManager.addEvent.mockClear();
+      const properties = new Proxy(
+        { idempotency_key: 'o-1', plan: 'pro' },
+        { get: () => { throw new Error('lazy bag'); } }
+      );
+
+      await expect(analytics.track('purchase', properties)).resolves.toBeUndefined();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
     it('drops a call whose idempotency_key is invalid, without throwing', async () => {
