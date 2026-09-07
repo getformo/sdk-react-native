@@ -7,6 +7,7 @@
 import {
   EVENTS_API_HOST,
   EventType,
+  IDEMPOTENCY_KEY_PROPERTY,
   LOCAL_ANONYMOUS_ID_KEY,
   LOCAL_SESSION_ID_KEY,
   LOCAL_SESSION_LAST_ACTIVITY_KEY,
@@ -774,6 +775,11 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /**
    * Track custom event
+   *
+   * `properties.idempotency_key` (string or safe integer) names one
+   * action, e.g. an order id. Calls that reuse it for the same event name
+   * share one message id and collapse at ingestion. The key is hashed and
+   * not sent. Any other value is rejected with a warning.
    */
   async track(
     event: string,
@@ -781,9 +787,37 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    let idempotencyKey: string | undefined;
+    try {
+      if (
+        properties &&
+        Object.prototype.hasOwnProperty.call(properties, IDEMPOTENCY_KEY_PROPERTY)
+      ) {
+        const { [IDEMPOTENCY_KEY_PROPERTY]: rawKey, ...rest } = properties;
+        properties = rest;
+        if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+          // Opaque key: whitespace is kept.
+          idempotencyKey = rawKey;
+        } else if (typeof rawKey === "number" && Number.isSafeInteger(rawKey)) {
+          // Above 2^53 distinct ids compare equal as numbers; pass those as
+          // strings.
+          idempotencyKey = String(rawKey);
+        } else {
+          logger.warn(
+            `FormoAnalytics::track: ${IDEMPOTENCY_KEY_PROPERTY} must be a non-empty string or safe integer`
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      // A throwing getter or proxy on the property bag is the host's bug,
+      // but analytics must not reject into the host over it.
+      logger.error("Error tracking event:", error);
+      return;
+    }
     await this.trackEvent(
       EventType.TRACK,
-      { event },
+      { event, idempotencyKey },
       properties,
       context,
       callback

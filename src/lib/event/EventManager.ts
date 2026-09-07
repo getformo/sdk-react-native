@@ -3,6 +3,7 @@ import { logger } from "../logger";
 import { EVENT_CREATION_CANCELLED, EventFactory } from "./EventFactory";
 import { IEventFactory, IEventManager, IEventQueue } from "./types";
 import { isBlockedAddress } from "../../utils/address";
+import { hash } from "../../utils/hash";
 
 /**
  * Event manager for React Native SDK
@@ -29,8 +30,28 @@ class EventManager implements IEventManager {
     address?: Address,
     userId?: string
   ): Promise<void> {
-    const { callback, ..._event } = event;
+    const { callback, ...eventWithoutCallback } = event;
+    const { idempotencyKey, ..._event } = eventWithoutCallback as APIEvent & {
+      idempotencyKey?: string;
+    };
     const generation = this.eventQueue.getGeneration();
+
+    // Taken before the enrichment await, from the caller's input as it is
+    // now: a properties object the app mutates while enrichment is pending
+    // must not fingerprint the event under values it did not carry.
+    // Custom events are fingerprinted on what the caller passed, so SDK
+    // context that changes between two identical calls does not split them.
+    const dedupKey =
+      event.type === "track"
+        ? hash(
+            JSON.stringify({
+              event: _event,
+              address: address ?? null,
+              userId: userId ?? null,
+            })
+          )
+        : undefined;
+
     let formoEvent;
     try {
       formoEvent = await this.eventFactory.create(_event, address, userId);
@@ -49,14 +70,19 @@ class EventManager implements IEventManager {
       return;
     }
 
-    await this.eventQueue.enqueue(formoEvent, (err, _, data) => {
-      if (err) {
-        logger.error("Error sending events:", err);
-      } else {
-        logger.info(`Events sent successfully: ${(data as unknown[])?.length ?? 0} events`);
-      }
-      callback?.(err, _, data);
-    }, generation);
+    await this.eventQueue.enqueue(
+      formoEvent,
+      (err, _, data) => {
+        if (err) {
+          logger.error("Error sending events:", err);
+        } else {
+          logger.info(`Events sent successfully: ${(data as unknown[])?.length ?? 0} events`);
+        }
+        callback?.(err, _, data);
+      },
+      generation,
+      { dedupKey, idempotencyKey }
+    );
   }
 }
 

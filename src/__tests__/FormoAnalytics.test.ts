@@ -491,6 +491,66 @@ describe('FormoAnalytics', () => {
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
+
+    it('lifts idempotency_key out of the properties into the event identity', async () => {
+      const properties = { order_id: 'o-1', idempotency_key: 'o-1' };
+
+      await analytics.track('purchase', properties);
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.idempotencyKey).toBe('o-1');
+      expect(event.properties).toEqual({ order_id: 'o-1' });
+      // The caller's object is left alone.
+      expect(properties).toEqual({ order_id: 'o-1', idempotency_key: 'o-1' });
+    });
+
+    it('ignores an inherited idempotency_key: only an own property is a key', async () => {
+      const properties = Object.create({ idempotency_key: 'inherited' });
+      properties.plan = 'pro';
+
+      await analytics.track('purchase', properties);
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.idempotencyKey).toBeUndefined();
+      expect(event.properties).toBe(properties);
+    });
+
+    it('canonicalizes a safe integer idempotency_key', async () => {
+      await analytics.track('purchase', { idempotency_key: 42 });
+
+      expect(mockEventManager.addEvent.mock.calls.at(-1)?.[0].idempotencyKey).toBe('42');
+    });
+
+    it('rejects numbers that cannot name one id exactly', async () => {
+      mockEventManager.addEvent.mockClear();
+
+      // 2^53 and 2^53 + 1 are the same JavaScript number.
+      await analytics.track('purchase', { idempotency_key: 9007199254740993 });
+      await analytics.track('purchase', { idempotency_key: 1.5 });
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('logs instead of rejecting when the property bag throws on access', async () => {
+      mockEventManager.addEvent.mockClear();
+      const properties = new Proxy(
+        { idempotency_key: 'o-1', plan: 'pro' },
+        { get: () => { throw new Error('lazy bag'); } }
+      );
+
+      await expect(analytics.track('purchase', properties)).resolves.toBeUndefined();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('drops a call whose idempotency_key is invalid, without throwing', async () => {
+      mockEventManager.addEvent.mockClear();
+
+      for (const idempotency_key of ['', '   ', null, true, {}, NaN, Infinity]) {
+        await analytics.track('purchase', { idempotency_key });
+      }
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('screen()', () => {

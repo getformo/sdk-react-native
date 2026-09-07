@@ -50,3 +50,83 @@ describe("EventManager consent boundary", () => {
     expect(storage().get(LOCAL_ANONYMOUS_ID_KEY)).toBeNull();
   });
 });
+
+describe("EventManager custom-event identity", () => {
+  const makeManager = () => {
+    initStorageManager("event-manager-identity");
+    const queue = {
+      enqueue: jest.fn(),
+      getGeneration: () => 0,
+    } as unknown as IEventQueue;
+    return { queue, manager: new EventManager(queue, undefined, () => true) };
+  };
+  const enqueueCalls = (queue: IEventQueue) =>
+    (queue.enqueue as jest.Mock).mock.calls as Array<
+      [Record<string, unknown>, unknown, number, { dedupKey?: string; idempotencyKey?: string }]
+    >;
+
+  it("fingerprints track calls before SDK context is added", async () => {
+    const { queue, manager } = makeManager();
+    jest
+      .spyOn(manager.eventFactory as any, "generateContext")
+      .mockResolvedValueOnce({ screen: "A", app_state: "active" })
+      .mockResolvedValueOnce({ screen: "B", app_state: "background" });
+    const call = { type: "track" as const, event: "Order Placed", properties: { market: "ZEC" } };
+
+    await manager.addEvent(call);
+    await manager.addEvent({ ...call });
+
+    const [first, second] = enqueueCalls(queue);
+    expect(first![0].context).not.toEqual(second![0].context);
+    expect(second![3].dedupKey).toBe(first![3].dedupKey);
+  });
+
+  it("fingerprints the caller input as it was when track() was called", async () => {
+    const { queue, manager } = makeManager();
+    const properties: Record<string, unknown> = { market: "ZEC", volume: 3571 };
+
+    const first = manager.addEvent({ type: "track", event: "Order Placed", properties });
+    // The app reuses and mutates the object while enrichment is pending.
+    properties.volume = 9999;
+    await first;
+    await manager.addEvent({ type: "track", event: "Order Placed", properties: { market: "ZEC", volume: 3571 } });
+
+    const [a, b] = enqueueCalls(queue);
+    expect(b![3].dedupKey).toBe(a![3].dedupKey);
+  });
+
+  it("keeps caller-supplied context in the fingerprint", async () => {
+    const { queue, manager } = makeManager();
+    const call = { type: "track" as const, event: "Order Placed", properties: { market: "ZEC" } };
+
+    await manager.addEvent({ ...call, context: { source: "limit" } });
+    await manager.addEvent({ ...call, context: { source: "market" } });
+
+    const [first, second] = enqueueCalls(queue);
+    expect(second![3].dedupKey).not.toBe(first![3].dedupKey);
+  });
+
+  it("leaves automatic events to the queue's enriched fingerprint", async () => {
+    const { queue, manager } = makeManager();
+
+    await manager.addEvent({ type: "connect", chainId: 1, address: "0x1234567890123456789012345678901234567890" });
+
+    expect(enqueueCalls(queue)[0]![3].dedupKey).toBeUndefined();
+  });
+
+  it("forwards the idempotency key without adding it to the event", async () => {
+    const { queue, manager } = makeManager();
+
+    await manager.addEvent({
+      type: "track",
+      event: "Order Placed",
+      properties: { market: "ZEC" },
+      idempotencyKey: "order-123",
+    });
+
+    const [call] = enqueueCalls(queue);
+    expect(call![0]).not.toHaveProperty("idempotencyKey");
+    expect(call![0].properties).toEqual({ market: "ZEC" });
+    expect(call![3].idempotencyKey).toBe("order-123");
+  });
+});

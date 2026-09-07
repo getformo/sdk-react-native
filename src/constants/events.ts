@@ -23,6 +23,12 @@ export type TEventChannel = Lowercase<EventChannel>;
 
 // React Native SDK uses mobile channel
 export const CHANNEL: TEventChannel = "mobile";
+
+/**
+ * Reserved track() property naming one action tracked as a custom event. Lifted
+ * out by track(): it becomes the message id and is never sent.
+ */
+export const IDEMPOTENCY_KEY_PROPERTY = "idempotency_key";
 export const VERSION = "0";
 
 // Session inactivity timeout (30 min), matching the GA4 default and Formo's own

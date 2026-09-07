@@ -7,15 +7,20 @@ import {
   millisecondsToSecond,
   isNetworkError,
 } from "../../utils";
-import { hash } from "../../utils/hash";
+import { hash, generateUUID } from "../../utils/hash";
 import { toDateHourMinute } from "../../utils/timestamp";
 import { logger } from "../logger";
-import { IEventQueue } from "./types";
+import { EnqueueOptions, IEventQueue } from "./types";
 
 type QueueItem = {
   message: IFormoEventPayload;
   callback: (...args: unknown[]) => void;
-  hash: string;
+  // Key under which this event is remembered for duplicate suppression, and
+  // the acceptance token recorded for it, so a permanently failed send can
+  // release exactly its own entry and not a newer one for the same key. See
+  // releaseFingerprints.
+  dedupKey: string;
+  dedupToken: number;
 };
 
 type IFormoEventFlushPayload = IFormoEventPayload & {
@@ -60,6 +65,31 @@ const DEFAULT_FLUSH_INTERVAL = 1_000 * 30; // 30 seconds
 const MAX_FLUSH_INTERVAL = 1_000 * 300; // 5 minutes
 const MIN_FLUSH_INTERVAL = 1_000 * 10; // 10 seconds
 
+// How long an accepted event keeps suppressing identical events. A rolling
+// window from the moment of acceptance, so a double-fire is caught however
+// the wall clock happens to fall (see generateDedupKey).
+const DEDUP_WINDOW_MS = 1_000 * 60; // 1 minute
+
+// Generated context that can differ between two calls that are the same
+// call: a rotated screen, a network handover. Left out of the fallback
+// fingerprint only; the wire id is untouched.
+const VOLATILE_CONTEXT_FIELDS = [
+  "screen_width",
+  "screen_height",
+  "screen_density",
+  "network_wifi",
+  "network_cellular",
+  "network_carrier",
+];
+
+/** Monotonic time where the platform offers one, else undefined. */
+const monotonicNow = (): number | undefined => {
+  // Not in this build's type lib, but present on Hermes and JSC hosts.
+  const perf = (globalThis as { performance?: { now?: () => number } })
+    .performance;
+  return typeof perf?.now === "function" ? perf.now() : undefined;
+};
+
 const noop = () => {};
 
 /**
@@ -95,7 +125,26 @@ export class EventQueue implements IEventQueue {
   private flushIntervalMs: number;
   private maxQueueSize: number;
   private retryCount: number;
-  private payloadHashes: Set<string> = new Set();
+  // Accepted event fingerprints and when each stops counting as a duplicate.
+  //
+  // Keyed on time, not on queue membership. Hashes used to be dropped when
+  // their batch was delivered, which was the same thing while every event
+  // waited for the batch timer. Since the first event of an app session is
+  // sent the moment it arrives (see enqueue), its hash left with it, and an
+  // identical track() a moment later, the double-fire this exists to catch,
+  // was accepted. Same fix as the web SDK's #375.
+  //
+  // Insertion order is expiry order (each entry expires DEDUP_WINDOW_MS after
+  // it was added), which is what lets the prune stop at the first live entry.
+  // The token is unique per acceptance; see releaseFingerprints.
+  private payloadHashes: Map<string, { expiresAt: number; token: number }> =
+    new Map();
+  private acceptanceSeq = 0;
+  // State for elapsedNow(): the wall clock as a forward-only accumulator,
+  // and the monotonic origin.
+  private lastWall = Date.now();
+  private wallElapsed = 0;
+  private readonly monotonicStart = monotonicNow();
   private flushMutex: Promise<void> = Promise.resolve();
   private appStateSubscription: { remove: () => void } | null = null;
   /**
@@ -185,24 +234,43 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
-   * Generate message ID for deduplication
+   * The event's identity on the wire: what ingestion collapses on. Keyed
+   * custom events hash type + name + key; unkeyed ones get a random id;
+   * other event types keep the content-and-minute hash, so what ingestion
+   * collapses does not change on upgrade.
    */
-  private async generateMessageId(event: IFormoEvent): Promise<string> {
+  private generateMessageId(event: IFormoEvent, idempotencyKey?: string): string {
+    if (idempotencyKey !== undefined) {
+      return hash(
+        JSON.stringify({
+          type: event.type,
+          event: event.event ?? null,
+          idempotencyKey,
+        })
+      );
+    }
+    if (event.type === "track") return generateUUID();
     const formattedTimestamp = toDateHourMinute(
       new Date(event.original_timestamp)
     );
-    const eventForHashing = { ...event, original_timestamp: formattedTimestamp };
-    const eventString = JSON.stringify(eventForHashing);
-    return hash(eventString);
+    return hash(
+      JSON.stringify({ ...event, original_timestamp: formattedTimestamp })
+    );
   }
 
   /**
-   * Check if event is a duplicate
+   * Fallback fingerprint: the event without its timestamp and without the
+   * volatile generated context, so a double-fire across a minute boundary
+   * or a screen rotation still matches. Custom events pass a pre-enrichment
+   * fingerprint instead.
    */
-  private isDuplicate(eventId: string): boolean {
-    if (this.payloadHashes.has(eventId)) return true;
-    this.payloadHashes.add(eventId);
-    return false;
+  private generateDedupKey(event: IFormoEvent): string {
+    const { original_timestamp: _ignored, context, ...rest } = event;
+    const stableContext = context ? { ...context } : context;
+    if (stableContext) {
+      for (const field of VOLATILE_CONTEXT_FIELDS) delete stableContext[field];
+    }
+    return hash(JSON.stringify({ ...rest, context: stableContext }));
   }
 
   /**
@@ -211,7 +279,8 @@ export class EventQueue implements IEventQueue {
   async enqueue(
     event: IFormoEvent,
     callback?: (...args: unknown[]) => void,
-    generation = this.generation
+    generation = this.generation,
+    options?: EnqueueOptions
   ): Promise<void> {
     if (this.closed) {
       logger.debug("EventQueue: Ignoring event enqueued after cleanup");
@@ -221,9 +290,16 @@ export class EventQueue implements IEventQueue {
     if (this.generation !== generation) return;
 
     callback = callback || noop;
-    const message_id = await this.generateMessageId(event);
+    // Both hashes are synchronous; the single yield here is kept so the
+    // re-checks below still cover a caller that did not await enqueue().
+    const message_id = await Promise.resolve(
+      this.generateMessageId(event, options?.idempotencyKey)
+    );
+    const dedupKey = options?.idempotencyKey
+      ? message_id
+      : options?.dedupKey || this.generateDedupKey(event);
 
-    // Hashing is async, so cleanup() can complete while this call is suspended
+    // cleanup() can complete while this call is suspended
     // above. Re-check, or a caller that did not await enqueue() would resume
     // after teardown, push onto a queue nobody will drain, and — if this is the
     // session's first event — fire a network request on a torn-down instance.
@@ -240,12 +316,13 @@ export class EventQueue implements IEventQueue {
       return;
     }
 
-    // Check for duplicate
-    if (this.isDuplicate(message_id)) {
+    // Check if an identical event was accepted within the dedup window
+    if (this.isDuplicate(dedupKey)) {
+      const label = event.event ? `${event.type} "${event.event}"` : event.type;
       logger.warn(
-        `Event already enqueued, try again after ${millisecondsToSecond(
-          this.flushIntervalMs
-        )} seconds.`
+        `Duplicate ${label} dropped: an identical event was accepted less than ${millisecondsToSecond(
+          DEDUP_WINDOW_MS
+        )} seconds ago.`
       );
       return;
     }
@@ -253,7 +330,8 @@ export class EventQueue implements IEventQueue {
     this.queue.push({
       message: { ...event, message_id },
       callback,
-      hash: message_id,
+      dedupKey,
+      dedupToken: this.acceptanceSeq,
     });
 
     logger.log(
@@ -409,14 +487,9 @@ export class EventQueue implements IEventQueue {
 
       try {
         await this.sendWithRetry(data, generation);
-        // Only remove hashes after successful send, and only if clear() has
-        // not run meanwhile: it already emptied the set, so an identical event
-        // may have been enqueued since and now owns that hash. Deleting it
-        // here would strip the new item's dedup entry and let a duplicate
-        // through.
-        if (this.generation === generation) {
-          items.forEach((item) => this.payloadHashes.delete(item.hash));
-        }
+        // The dedup entries stay: they expire on their own clock, not on
+        // delivery, so an identical event arriving right after this send is
+        // still recognised as the double-fire it is.
         done();
         logger.info(`Events sent successfully: ${data.length} events`);
       } catch (err) {
@@ -433,19 +506,19 @@ export class EventQueue implements IEventQueue {
           // The API rejected this payload itself, so the identical batch can
           // never succeed. Keeping it queued would re-post it every interval
           // forever, re-invoking callbacks and burning the user's battery and
-          // data. Drop it, and release the hashes so equivalent events are not
-          // blocked from being enqueued again later. The web SDK likewise does
-          // not re-queue a failed batch.
-          items.forEach((item) => this.payloadHashes.delete(item.hash));
+          // data. Drop it, and release the fingerprints so equivalent events
+          // are not blocked from being enqueued again later. The web SDK
+          // likewise does not re-queue a failed batch.
+          this.releaseFingerprints(items);
           done(err as Error);
           logger.error(
             `Dropping ${items.length} event(s), permanently rejected by the API:`,
             err
           );
         } else {
-          // Re-add items to the front of the queue for retry on next flush
-          // Note: We intentionally keep hashes in payloadHashes to prevent duplicate
-          // events from being enqueued while these items are pending retry.
+          // Re-add items to the front of the queue for retry on next flush.
+          // Their fingerprints stay live until they expire, so an identical
+          // event is not enqueued behind them while they wait.
           this.queue.unshift(...items);
           done(err as Error);
           logger.error("Error sending events, re-queued for retry:", err);
@@ -537,6 +610,85 @@ export class EventQueue implements IEventQueue {
     // proxy or server timing out a request is transient, and treating it as
     // permanent would silently lose those events.
     return (status >= 500 && status <= 599) || status === 429 || status === 408;
+  }
+
+  /**
+   * Whether an identical event was accepted within the dedup window. Records
+   * the key when it was not. Expired keys are pruned here, on the enqueue
+   * path, so the map is bounded by one minute of accepted events and needs
+   * no timer of its own.
+   */
+  private isDuplicate(dedupKey: string): boolean {
+    const now = this.elapsedNow();
+    this.pruneExpired(now);
+    if (this.payloadHashes.has(dedupKey)) return true;
+
+    this.payloadHashes.set(dedupKey, {
+      expiresAt: now + DEDUP_WINDOW_MS,
+      token: ++this.acceptanceSeq,
+    });
+    return false;
+  }
+
+  /**
+   * Forget that these events were accepted, so identical ones are taken
+   * again. For items that will never be delivered.
+   *
+   * Only an item's OWN entry is released. A send can outlive the window
+   * through retry backoff, or be cut short by clear(); by the time it
+   * fails, the same event may have been accepted again and be in flight
+   * under the same key. The acceptance token tells the two apart.
+   */
+  private releaseFingerprints(items: QueueItem[]): void {
+    for (const item of items) {
+      const entry = this.payloadHashes.get(item.dedupKey);
+      if (entry && entry.token === item.dedupToken) {
+        this.payloadHashes.delete(item.dedupKey);
+      }
+    }
+  }
+
+  /**
+   * Elapsed time since this queue was created, for the dedup window. Never
+   * decreases, keeps real pace after any clock step, and errs toward
+   * running fast.
+   *
+   * Two sources, the larger wins. The monotonic clock (performance.now) is
+   * immune to wall-clock steps but on some platforms stops while the device
+   * is asleep, so a phone that sleeps mid-window would wake still inside it.
+   * The wall clock counts suspension but can step, so it is read as a sum of
+   * forward deltas: a forward step (or suspension) is added and only expires
+   * entries early, the safe direction for a duplicate guard; a backward step
+   * adds nothing and the sum resumes at real pace from the new reading.
+   *
+   * Both sources are non-decreasing, so their max is, which is what lets
+   * pruneExpired assume insertion order is expiry order.
+   */
+  private elapsedNow(): number {
+    const wallNow = Date.now();
+    const delta = wallNow - this.lastWall;
+    this.lastWall = wallNow;
+    if (delta > 0) this.wallElapsed += delta;
+
+    const mono = monotonicNow();
+    const monotonic =
+      mono !== undefined && this.monotonicStart !== undefined
+        ? mono - this.monotonicStart
+        : 0;
+    return Math.max(this.wallElapsed, monotonic);
+  }
+
+  /**
+   * Drop expired fingerprints from the front of the map. Entries are in
+   * insertion order and every one expires a fixed interval after insertion,
+   * so the first live entry ends the scan: each expired entry is visited
+   * once in its life, not once per enqueue.
+   */
+  private pruneExpired(now: number): void {
+    for (const [key, entry] of this.payloadHashes) {
+      if (entry.expiresAt > now) break;
+      this.payloadHashes.delete(key);
+    }
   }
 
   /**
