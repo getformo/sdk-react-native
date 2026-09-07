@@ -1224,6 +1224,80 @@ describe("EventQueue dedup window", () => {
     await second.cleanup();
   });
 
+  it("catches a screen double-fire across a rotation", async () => {
+    const queue = makeQueue();
+    const screen = (screen_width: number, screen_height: number) =>
+      event({
+        type: "screen",
+        event: null,
+        properties: { name: "Trade" },
+        context: { screen_width, screen_height, os_name: "ios" },
+      });
+
+    await queue.enqueue(screen(390, 844));
+    await settle();
+    await queue.enqueue(screen(844, 390));
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+
+  it("ignores a network handover in the fallback fingerprint", async () => {
+    const queue = makeQueue();
+    const connect = (network: Record<string, unknown>) =>
+      event({
+        type: "connect",
+        event: null,
+        properties: { chain_id: 1 },
+        context: { os_name: "ios", ...network },
+      });
+
+    await queue.enqueue(connect({ network_wifi: true }));
+    await settle();
+    await queue.enqueue(connect({ network_cellular: true, network_carrier: "Carrier" }));
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+
+  it("keeps semantic context and properties in the fallback fingerprint", async () => {
+    const queue = makeQueue();
+    const screen = (name: string, os_name: string) =>
+      event({ type: "screen", event: null, properties: { name }, context: { os_name } });
+
+    await queue.enqueue(screen("Trade", "ios"));
+    await settle();
+    await queue.enqueue(screen("Portfolio", "ios"));
+    await queue.enqueue(screen("Trade", "android"));
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(3);
+    await queue.cleanup();
+  });
+
+  it("leaves the wire identity of automatic events untouched by the exclusion", async () => {
+    const screen = (screen_width: number) =>
+      event({ type: "screen", event: null, properties: { name: "Trade" }, context: { screen_width } });
+
+    const first = makeQueue();
+    await first.enqueue(screen(390));
+    await settle();
+    const second = makeQueue();
+    await second.enqueue(screen(844));
+    await settle();
+
+    const ids = sent().map((e) => e.message_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    await first.cleanup();
+    await second.cleanup();
+  });
+
   it("judges custom events by the caller-supplied fingerprint, not the enriched event", async () => {
     const queue = makeQueue();
 

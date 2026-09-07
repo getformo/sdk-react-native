@@ -70,6 +70,18 @@ const MIN_FLUSH_INTERVAL = 1_000 * 10; // 10 seconds
 // the wall clock happens to fall (see generateDedupKey).
 const DEDUP_WINDOW_MS = 1_000 * 60; // 1 minute
 
+// Generated context that can differ between two calls that are the same
+// call: a rotated screen, a network handover. Left out of the fallback
+// fingerprint only; the wire id is untouched.
+const VOLATILE_CONTEXT_FIELDS = [
+  "screen_width",
+  "screen_height",
+  "screen_density",
+  "network_wifi",
+  "network_cellular",
+  "network_carrier",
+];
+
 /** Monotonic time where the platform offers one, else undefined. */
 const monotonicNow = (): number | undefined => {
   // Not in this build's type lib, but present on Hermes and JSC hosts.
@@ -247,13 +259,18 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
-   * Fallback fingerprint: the event without its timestamp, so a double-fire
-   * across a minute boundary still matches. Custom events pass a
-   * pre-enrichment fingerprint instead.
+   * Fallback fingerprint: the event without its timestamp and without the
+   * volatile generated context, so a double-fire across a minute boundary
+   * or a screen rotation still matches. Custom events pass a pre-enrichment
+   * fingerprint instead.
    */
   private generateDedupKey(event: IFormoEvent): string {
-    const { original_timestamp: _ignored, ...rest } = event;
-    return hash(JSON.stringify(rest));
+    const { original_timestamp: _ignored, context, ...rest } = event;
+    const stableContext = context ? { ...context } : context;
+    if (stableContext) {
+      for (const field of VOLATILE_CONTEXT_FIELDS) delete stableContext[field];
+    }
+    return hash(JSON.stringify({ ...rest, context: stableContext }));
   }
 
   /**
