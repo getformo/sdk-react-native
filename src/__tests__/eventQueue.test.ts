@@ -1,4 +1,5 @@
 import { EventQueue } from "../lib/event/EventQueue";
+import { logger } from "../lib/logger";
 import type { IFormoEvent } from "../types";
 
 /** Minimal shape of Node's process needed here; @types/node isn't a dep. */
@@ -1222,6 +1223,47 @@ describe("EventQueue dedup window", () => {
     expect(ids[0]).not.toMatch(UUID);
     await first.cleanup();
     await second.cleanup();
+  });
+
+  it("names the dropped event in the duplicate warning", async () => {
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      const queue = makeQueue();
+      await queue.enqueue(event());
+      await settle();
+      await queue.enqueue(event());
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain('Duplicate track "Order Placed" dropped');
+      await queue.cleanup();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("expires the window on the wall clock when the monotonic clock stops during sleep", async () => {
+    jest.useFakeTimers();
+    // On some devices performance.now() does not advance while asleep. The
+    // wall clock does, and it must be enough to end the window.
+    const perf = (globalThis as { performance?: { now: () => number } }).performance!;
+    const frozen = jest.spyOn(perf, "now").mockReturnValue(1_000);
+    try {
+      const queue = makeQueue();
+
+      await queue.enqueue(event());
+      await jest.advanceTimersByTimeAsync(10);
+      await queue.enqueue(event()); // inside the window: dropped
+      await jest.advanceTimersByTimeAsync(61_000); // asleep: only Date.now moved
+      await queue.enqueue(event()); // after the window: accepted
+      await queue.flush();
+      await jest.advanceTimersByTimeAsync(10);
+
+      expect(sent()).toHaveLength(2);
+      await queue.cleanup();
+    } finally {
+      frozen.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it("catches a screen double-fire across a rotation", async () => {
