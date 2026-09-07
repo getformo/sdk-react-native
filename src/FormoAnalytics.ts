@@ -791,7 +791,10 @@ export class FormoAnalytics implements IFormoAnalytics {
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
     let idempotencyKey: string | undefined;
-    if (properties && IDEMPOTENCY_KEY_PROPERTY in properties) {
+    if (
+      properties &&
+      Object.prototype.hasOwnProperty.call(properties, IDEMPOTENCY_KEY_PROPERTY)
+    ) {
       const { [IDEMPOTENCY_KEY_PROPERTY]: rawKey, ...rest } = properties;
       properties = rest;
       if (typeof rawKey === "string" && rawKey.trim().length > 0) {

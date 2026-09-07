@@ -504,6 +504,17 @@ describe('FormoAnalytics', () => {
       expect(properties).toEqual({ order_id: 'o-1', idempotency_key: 'o-1' });
     });
 
+    it('ignores an inherited idempotency_key: only an own property is a key', async () => {
+      const properties = Object.create({ idempotency_key: 'inherited' });
+      properties.plan = 'pro';
+
+      await analytics.track('purchase', properties);
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.idempotencyKey).toBeUndefined();
+      expect(event.properties).toBe(properties);
+    });
+
     it('canonicalizes a finite numeric idempotency_key', async () => {
       await analytics.track('purchase', { idempotency_key: 42 });
 
