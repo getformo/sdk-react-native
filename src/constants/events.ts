@@ -25,7 +25,7 @@ export type TEventChannel = Lowercase<EventChannel>;
 export const CHANNEL: TEventChannel = "mobile";
 
 /**
- * Reserved track() property naming one occurrence of a custom event. Lifted
+ * Reserved track() property naming one action tracked as a custom event. Lifted
  * out by track(): it becomes the message id and is never sent.
  */
 export const IDEMPOTENCY_KEY_PROPERTY = "idempotency_key";
