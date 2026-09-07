@@ -7,6 +7,7 @@
 import {
   EVENTS_API_HOST,
   EventType,
+  IDEMPOTENCY_KEY_PROPERTY,
   LOCAL_ANONYMOUS_ID_KEY,
   LOCAL_SESSION_ID_KEY,
   LOCAL_SESSION_LAST_ACTIVITY_KEY,
@@ -774,6 +775,14 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /**
    * Track custom event
+   *
+   * The reserved `idempotency_key` property names one logical occurrence of
+   * the event (an order id, a checkout id). Calls that reuse the key for the
+   * same event name share one wire identity, so retries and repeated calls
+   * collapse at ingestion. The key is hashed into that identity and removed
+   * from the properties that are sent. Strings and finite numbers are
+   * accepted; any other value drops the call with a warning rather than
+   * silently sending it under a random identity.
    */
   async track(
     event: string,
@@ -781,9 +790,25 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
+    let idempotencyKey: string | undefined;
+    if (properties && IDEMPOTENCY_KEY_PROPERTY in properties) {
+      const { [IDEMPOTENCY_KEY_PROPERTY]: rawKey, ...rest } = properties;
+      properties = rest;
+      if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+        // Keys are opaque: surrounding whitespace is part of the identity.
+        idempotencyKey = rawKey;
+      } else if (typeof rawKey === "number" && Number.isFinite(rawKey)) {
+        idempotencyKey = String(rawKey);
+      } else {
+        logger.warn(
+          `FormoAnalytics::track: ${IDEMPOTENCY_KEY_PROPERTY} must be a non-empty string or finite number`
+        );
+        return;
+      }
+    }
     await this.trackEvent(
       EventType.TRACK,
-      { event },
+      { event, idempotencyKey },
       properties,
       context,
       callback

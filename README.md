@@ -212,6 +212,25 @@ formo.track('Purchase Completed', {
 });
 ```
 
+The SDK drops a `track()` call that is identical to one it accepted less than
+60 seconds earlier, as a best-effort guard against accidental double-fires.
+For business-critical events, name the logical occurrence with the reserved
+`idempotency_key` property. Reusing it for the same event name produces the
+same ingestion ID for every retry:
+
+```typescript
+formo.track('Purchase Completed', {
+  revenue: 99.99,
+  productId: 'nft-001',
+  idempotency_key: order.id,
+});
+```
+
+Use a unique key for each real occurrence. The key is hashed into the event's
+identity and removed from the sent properties. Strings and finite numbers are
+accepted; any other value drops the call with a warning. When the SDK
+suppresses an identical call locally, that call's callback is not invoked.
+
 #### `identify(params, properties?, context?, callback?)`
 Identify a user by their wallet address.
 

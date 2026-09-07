@@ -4,8 +4,12 @@ import { utf8ToBytes, bytesToHex } from "ethereum-cryptography/utils";
 /**
  * Generate a SHA-256 hash for event deduplication
  * Returns full 64 hex chars to match web SDK format
+ *
+ * Synchronous on purpose: the event pipeline hashes on the enqueue path, and
+ * every extra await there is a microtask yield that can reorder events that
+ * were emitted back to back.
  */
-export async function hash(input: string): Promise<string> {
+export function hash(input: string): string {
   const bytes = utf8ToBytes(input);
   const hashBytes = sha256(bytes);
   return bytesToHex(hashBytes);

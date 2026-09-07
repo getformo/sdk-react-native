@@ -103,6 +103,8 @@ export interface DisconnectAPIEvent {
 export interface TrackAPIEvent {
   type: "track";
   event: string;
+  /** Internal: the validated idempotency key lifted out of the properties. */
+  idempotencyKey?: string;
   volume?: number;
   revenue?: number;
   currency?: string;

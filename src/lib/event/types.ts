@@ -95,12 +95,20 @@ export interface IEventManager {
   addEvent(event: APIEvent, address?: Address, userId?: string): Promise<void>;
 }
 
+export type EnqueueOptions = {
+  /** Fingerprint computed before SDK enrichment for best-effort dedup. */
+  dedupKey?: string;
+  /** Stable business identifier supplied by the caller. */
+  idempotencyKey?: string;
+};
+
 export interface IEventQueue {
   getGeneration(): number;
   enqueue(
     event: IFormoEvent,
     callback?: (...args: unknown[]) => void,
-    generation?: number
+    generation?: number,
+    options?: EnqueueOptions
   ): Promise<void>;
   flush(callback?: (...args: unknown[]) => void): Promise<void>;
   clear(): void;

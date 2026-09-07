@@ -491,6 +491,34 @@ describe('FormoAnalytics', () => {
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
+
+    it('lifts idempotency_key out of the properties into the event identity', async () => {
+      const properties = { order_id: 'o-1', idempotency_key: 'o-1' };
+
+      await analytics.track('purchase', properties);
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.idempotencyKey).toBe('o-1');
+      expect(event.properties).toEqual({ order_id: 'o-1' });
+      // The caller's object is left alone.
+      expect(properties).toEqual({ order_id: 'o-1', idempotency_key: 'o-1' });
+    });
+
+    it('canonicalizes a finite numeric idempotency_key', async () => {
+      await analytics.track('purchase', { idempotency_key: 42 });
+
+      expect(mockEventManager.addEvent.mock.calls.at(-1)?.[0].idempotencyKey).toBe('42');
+    });
+
+    it('drops a call whose idempotency_key is invalid, without throwing', async () => {
+      mockEventManager.addEvent.mockClear();
+
+      for (const idempotency_key of ['', '   ', null, true, {}, NaN, Infinity]) {
+        await analytics.track('purchase', { idempotency_key });
+      }
+
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
   });
 
   describe('screen()', () => {

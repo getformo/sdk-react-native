@@ -1016,3 +1016,228 @@ describe("EventQueue", () => {
     });
   });
 });
+
+/**
+ * Rolling 60-second duplicate window and wire identity (ported from the web
+ * SDK's #375 and #389).
+ */
+describe("EventQueue dedup window", () => {
+  let fetchMock: jest.Mock;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  const makeQueue = (options: Partial<{ retryCount: number; flushInterval: number }> = {}) =>
+    new EventQueue("test-write-key", {
+      apiHost: "https://events.formo.test",
+      flushAt: 20,
+      ...options,
+    });
+
+  const event = (overrides: Record<string, unknown> = {}): IFormoEvent =>
+    ({
+      type: "track",
+      event: "Order Placed",
+      original_timestamp: "2026-01-01T00:00:59.999Z",
+      session_id: "session-1",
+      anonymous_id: "anon-1",
+      context: {},
+      properties: { market: "ZEC", volume: 3571 },
+      ...overrides,
+    }) as unknown as IFormoEvent;
+
+  /** Every event POSTed, across all calls, in order. */
+  const sent = () =>
+    fetchMock.mock.calls.flatMap(
+      ([, init]) =>
+        JSON.parse(init.body as string) as Array<{
+          event: string | null;
+          type: string;
+          message_id: string;
+        }>
+    );
+
+  const settle = () =>
+    new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 0);
+    });
+
+  beforeEach(() => {
+    fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    (globalThis as { fetch?: unknown }).fetch = fetchMock;
+  });
+
+  it("drops an identical event that arrives right after the immediate first flush", async () => {
+    const queue = makeQueue();
+
+    // The first event of the session is sent at once, so its dedup entry
+    // used to leave with it. The double-fire right behind it must still be
+    // caught.
+    await queue.enqueue(event());
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await queue.enqueue(event());
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+
+  it("catches a double-fire that straddles a minute boundary", async () => {
+    const queue = makeQueue();
+    const connect = { type: "connect", event: null, properties: { chain_id: 1 } };
+
+    await queue.enqueue(event({ ...connect, original_timestamp: "2026-01-01T00:00:59.999Z" }));
+    await settle();
+    await queue.enqueue(event({ ...connect, original_timestamp: "2026-01-01T00:01:00.001Z" }));
+    await queue.flush();
+    await settle();
+
+    // Different minute, so a different wire id, but the same event 2ms apart.
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+
+  it("accepts the same event again once the window has passed", async () => {
+    jest.useFakeTimers();
+    try {
+      const queue = makeQueue();
+
+      await queue.enqueue(event());
+      await jest.advanceTimersByTimeAsync(10);
+      await queue.enqueue(event()); // inside the window: dropped
+      await jest.advanceTimersByTimeAsync(61_000);
+      await queue.enqueue(event()); // after the window: a new occurrence
+      await queue.flush();
+      await jest.advanceTimersByTimeAsync(10);
+
+      expect(sent()).toHaveLength(2);
+      await queue.cleanup();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("releases the fingerprint when the batch is permanently rejected", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    const queue = makeQueue({ retryCount: 1 });
+
+    await queue.enqueue(event());
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The app retries after the error callback. That is a new attempt, not a
+    // double-fire, and must go out.
+    await queue.enqueue(event());
+    await queue.flush();
+    await settle();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sent()[1]?.event).toBe("Order Placed");
+    await queue.cleanup();
+  });
+
+  it("keeps the fingerprint while a batch waits for a transient retry", async () => {
+    jest.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue({ ok: false, status: 500 });
+      const queue = makeQueue({ retryCount: 1, flushInterval: 10_000 });
+
+      await queue.enqueue(event());
+      // Backoff and both attempts fail; the event is re-queued for the
+      // interval flush. An identical call meanwhile is still a duplicate.
+      await jest.advanceTimersByTimeAsync(3_000);
+      await queue.enqueue(event());
+
+      fetchMock.mockClear();
+      fetchMock.mockResolvedValue({ ok: true, status: 200 });
+      await jest.advanceTimersByTimeAsync(60_000);
+
+      expect(sent().filter((e) => e.event === "Order Placed")).toHaveLength(1);
+      await queue.cleanup();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("gives separate unkeyed custom events distinct random ids", async () => {
+    const queue = makeQueue();
+
+    await queue.enqueue(event({ properties: { market: "ZEC" } }));
+    await settle();
+    await queue.enqueue(event({ properties: { market: "ASTER" } }));
+    await queue.flush();
+    await settle();
+
+    const ids = sent().map((e) => e.message_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toMatch(UUID);
+    expect(ids[1]).toMatch(UUID);
+    expect(ids[0]).not.toBe(ids[1]);
+    await queue.cleanup();
+  });
+
+  it("keeps deterministic ids for automatic events across queue instances", async () => {
+    const connect = event({ type: "connect", event: null, properties: { chain_id: 1 } });
+
+    const first = makeQueue();
+    await first.enqueue(connect);
+    await settle();
+    const second = makeQueue();
+    await second.enqueue({ ...connect });
+    await settle();
+
+    const ids = sent().map((e) => e.message_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    await first.cleanup();
+    await second.cleanup();
+  });
+
+  it("derives one id from an idempotency key across instances, scoped by event name", async () => {
+    const first = makeQueue();
+    await first.enqueue(event({ properties: { attempt: 1 } }), undefined, undefined, {
+      idempotencyKey: "order-123",
+    });
+    await settle();
+
+    const second = makeQueue();
+    await second.enqueue(
+      event({ properties: { attempt: 2 }, original_timestamp: "2026-01-02T10:00:00.000Z" }),
+      undefined,
+      undefined,
+      { idempotencyKey: "order-123" }
+    );
+    await settle();
+    await second.enqueue(event({ event: "Order Filled" }), undefined, undefined, {
+      idempotencyKey: "order-123",
+    });
+    await second.flush();
+    await settle();
+
+    const ids = sent().map((e) => e.message_id);
+    expect(ids).toHaveLength(3);
+    expect(ids[1]).toBe(ids[0]);
+    expect(ids[2]).not.toBe(ids[0]);
+    expect(ids[0]).not.toMatch(UUID);
+    await first.cleanup();
+    await second.cleanup();
+  });
+
+  it("judges custom events by the caller-supplied fingerprint, not the enriched event", async () => {
+    const queue = makeQueue();
+
+    await queue.enqueue(event({ context: { screen: "A" } }), undefined, undefined, {
+      dedupKey: "same-call",
+    });
+    await settle();
+    await queue.enqueue(event({ context: { screen: "B" } }), undefined, undefined, {
+      dedupKey: "same-call",
+    });
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+});
