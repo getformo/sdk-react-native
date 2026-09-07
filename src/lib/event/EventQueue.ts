@@ -222,14 +222,10 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
-   * The event's identity on the wire: what ingestion collapses on.
-   *
-   * A keyed custom event hashes event type + name + key, so every retry and
-   * repeat of one business occurrence lands under one id. An unkeyed custom
-   * event is a separate occurrence and gets a random id. Every other event
-   * type keeps the established content-and-minute hash, so equivalent
-   * automatic events emitted by separate instances in the same minute keep
-   * collapsing as they always have.
+   * The event's identity on the wire: what ingestion collapses on. Keyed
+   * custom events hash type + name + key; unkeyed ones get a random id;
+   * other event types keep the content-and-minute hash, so what ingestion
+   * collapses does not change on upgrade.
    */
   private generateMessageId(event: IFormoEvent, idempotencyKey?: string): string {
     if (idempotencyKey !== undefined) {
@@ -251,11 +247,9 @@ export class EventQueue implements IEventQueue {
   }
 
   /**
-   * The fingerprint duplicates are judged by: the event without its
-   * timestamp. The window is a rolling one from acceptance, so it needs a
-   * key that does not change with the clock; a double-fire straddling a
-   * minute boundary must still match. This is the fallback for SDK-generated
-   * event types; custom events pass a pre-enrichment fingerprint in.
+   * Fallback fingerprint: the event without its timestamp, so a double-fire
+   * across a minute boundary still matches. Custom events pass a
+   * pre-enrichment fingerprint instead.
    */
   private generateDedupKey(event: IFormoEvent): string {
     const { original_timestamp: _ignored, ...rest } = event;

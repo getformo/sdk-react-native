@@ -212,24 +212,33 @@ formo.track('Purchase Completed', {
 });
 ```
 
-The SDK drops a `track()` call that is identical to one it accepted less than
-60 seconds earlier, as a best-effort guard against accidental double-fires.
-For business-critical events, name the logical occurrence with the reserved
-`idempotency_key` property. Reusing it for the same event name produces the
-same ingestion ID for every retry:
+The SDK deduplicates custom events in two ways.
+
+**Automatically, for 60 seconds.** When `track()` is called twice with the same
+event name and properties within 60 seconds, the SDK sends the event once.
+This handles accidental double-fires, such as a React effect that runs twice.
+It applies within one app session.
+
+**With an idempotency key, for retries.** For business-critical events, add
+the reserved `idempotency_key` property with a stable identifier for the
+occurrence, such as an order ID. Every call that reuses the key for the same
+event name gets the same message ID, so ingestion keeps one event however many
+times it is sent, including across restarts:
 
 ```typescript
-formo.track('Purchase Completed', {
-  revenue: 99.99,
-  productId: 'nft-001',
+formo.track('Order Placed', {
+  market: 'ETH-USDC',
+  side: 'buy',
+  volume: 2500,
   idempotency_key: order.id,
 });
 ```
 
-Use a unique key for each real occurrence. The key is hashed into the event's
-identity and removed from the sent properties. Strings and finite numbers are
-accepted; any other value drops the call with a warning. When the SDK
-suppresses an identical call locally, that call's callback is not invoked.
+Use a unique key for each real occurrence. The key is hashed into the message
+ID and is not sent as a property. Strings and finite numbers are accepted; any
+other value is rejected with a warning and the event is not sent. A call the
+SDK recognises as a duplicate does not invoke its callback. Server-side
+deduplication applies within one ingestion session and one storage partition.
 
 #### `identify(params, properties?, context?, callback?)`
 Identify a user by their wallet address.

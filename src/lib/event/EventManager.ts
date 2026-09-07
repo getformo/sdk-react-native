@@ -53,11 +53,8 @@ class EventManager implements IEventManager {
       return;
     }
 
-    // Custom events are judged for duplicates on what the caller passed, not
-    // on the enriched event: SDK-generated context (screen, device, app state)
-    // can change between two calls that are the same call. Caller-supplied
-    // context stays in, since the app chose it. Other event types keep the
-    // queue's enriched fingerprint, where that context is the event.
+    // Custom events are fingerprinted on what the caller passed, so SDK
+    // context that changes between two identical calls does not split them.
     const dedupKey =
       event.type === "track"
         ? hash(
