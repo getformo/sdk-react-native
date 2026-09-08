@@ -757,9 +757,8 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    // The full policy, not consent alone: the session marker is written
-    // below, and a detect refused later by the chain gate would leave the
-    // wallet marked and silent for the rest of the session.
+    // The full policy, not consent alone: a detect refused by the chain gate
+    // after the marker is written would silence the wallet for the session.
     if (!this.shouldTrack()) {
       logger.info("detect() skipped: tracking is suppressed for this wallet or chain");
       return;
@@ -803,8 +802,7 @@ export class FormoAnalytics implements IFormoAnalytics {
         const { [IDEMPOTENCY_KEY_PROPERTY]: rawKey, ...rest } = properties;
         properties = rest;
         if (rawKey === undefined || rawKey === null) {
-          // `{ idempotency_key: order?.id }` with no order: an unkeyed call,
-          // not a rejected one.
+          // `{ idempotency_key: order?.id }` with no order: unkeyed, not rejected.
         } else if (typeof rawKey === "string" && rawKey.trim().length > 0) {
           // Opaque key: whitespace is kept.
           idempotencyKey = rawKey;
