@@ -106,6 +106,19 @@ describe('FormoAnalyticsSession', () => {
     });
   });
 
+  describe('clearIdentified()', () => {
+    it('forgets identified wallets but keeps detected ones', () => {
+      session.markWalletDetected('io.metamask');
+      session.markWalletIdentified('0x123', 'io.metamask');
+
+      session.clearIdentified();
+
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+      expect(session.isWalletIdentified('0x123', 'io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('loading from storage', () => {
     it('should load detected wallets from storage', () => {
       mockStorage.get.mockImplementation((key: string) => {

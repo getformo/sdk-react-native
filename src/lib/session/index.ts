@@ -92,6 +92,15 @@ export class FormoAnalyticsSession {
   }
 
   /**
+   * Forget which wallets were identified, so a login after a logout
+   * identifies again. The detect markers stay: the wallets are still known.
+   */
+  public clearIdentified(): void {
+    this.identifiedWallets.clear();
+    storage().remove(SESSION_WALLET_IDENTIFIED_KEY);
+  }
+
+  /**
    * Clear all session data
    */
   public clear(): void {

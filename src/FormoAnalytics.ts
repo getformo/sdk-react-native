@@ -409,7 +409,13 @@ export class FormoAnalytics implements IFormoAnalytics {
     logger.debug("Traffic source set from URL:", trafficSource);
   }
 
-  /** Reset user and wallet state, preserving device identity and attribution. */
+  /**
+   * Reset user and wallet state, preserving device identity, the session,
+   * the detect markers and attribution, the same as the web SDK. The
+   * identify markers are cleared so a login after a logout identifies again.
+   * Use `optOutTracking()` to clear the device identity, the session and
+   * the markers.
+   */
   public reset(): void {
     this.walletGeneration++;
     this.chainGeneration++;
@@ -417,10 +423,8 @@ export class FormoAnalytics implements IFormoAnalytics {
     this.currentAddress = undefined;
     this.currentChainId = undefined;
     this.wagmiHandler?.clearIdentity();
-    storage().remove(LOCAL_SESSION_ID_KEY);
-    storage().remove(LOCAL_SESSION_LAST_ACTIVITY_KEY);
     storage().remove(SESSION_USER_ID_KEY);
-    this.session.clear();
+    this.session.clearIdentified();
   }
 
   /**
@@ -842,8 +846,13 @@ export class FormoAnalytics implements IFormoAnalytics {
     setConsentFlag(this.writeKey, CONSENT_OPT_OUT_KEY, "true");
     this.eventQueue.clear();
     this.reset();
-    // Consent withdrawal clears device identity and attribution too.
+    // Consent withdrawal also clears device identity, the session, the
+    // wallet markers and attribution. A fresh device id has never seen
+    // these wallets, so opting back in reports them anew.
     storage().remove(LOCAL_ANONYMOUS_ID_KEY);
+    storage().remove(LOCAL_SESSION_ID_KEY);
+    storage().remove(LOCAL_SESSION_LAST_ACTIVITY_KEY);
+    this.session.clear();
     clearTrafficSource();
     logger.info("Successfully opted out of tracking");
   }
