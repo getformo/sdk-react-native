@@ -757,7 +757,12 @@ export class FormoAnalytics implements IFormoAnalytics {
     context?: IFormoEventContext,
     callback?: (...args: unknown[]) => void
   ): Promise<void> {
-    if (this.hasOptedOutTracking()) return;
+    // The full policy, not consent alone: a detect refused by the chain gate
+    // after the marker is written would silence the wallet for the session.
+    if (!this.shouldTrack()) {
+      logger.info("detect() skipped: tracking is suppressed for this wallet or chain");
+      return;
+    }
     if (this.session.isWalletDetected(rdns)) {
       logger.warn(`Detect: Wallet ${providerName} already detected in this session`);
       return;
@@ -779,7 +784,8 @@ export class FormoAnalytics implements IFormoAnalytics {
    * `properties.idempotency_key` (string or safe integer) names one
    * action, e.g. an order id. Calls that reuse it for the same event name
    * share one message id and collapse at ingestion. The key is hashed and
-   * not sent. Any other value is rejected with a warning.
+   * not sent. null or undefined means no key; any other value is rejected
+   * with a warning.
    */
   async track(
     event: string,
@@ -795,7 +801,9 @@ export class FormoAnalytics implements IFormoAnalytics {
       ) {
         const { [IDEMPOTENCY_KEY_PROPERTY]: rawKey, ...rest } = properties;
         properties = rest;
-        if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+        if (rawKey === undefined || rawKey === null) {
+          // `{ idempotency_key: order?.id }` with no order: unkeyed, not rejected.
+        } else if (typeof rawKey === "string" && rawKey.trim().length > 0) {
           // Opaque key: whitespace is kept.
           idempotencyKey = rawKey;
         } else if (typeof rawKey === "number" && Number.isSafeInteger(rawKey)) {
