@@ -542,10 +542,20 @@ describe('FormoAnalytics', () => {
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
+    it('treats a null or undefined idempotency_key as no key and strips the property', async () => {
+      for (const idempotency_key of [undefined, null]) {
+        mockEventManager.addEvent.mockClear();
+        await analytics.track('purchase', { plan: 'pro', idempotency_key });
+        const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+        expect(event.idempotencyKey).toBeUndefined();
+        expect(event.properties).toEqual({ plan: 'pro' });
+      }
+    });
+
     it('drops a call whose idempotency_key is invalid, without throwing', async () => {
       mockEventManager.addEvent.mockClear();
 
-      for (const idempotency_key of ['', '   ', null, true, {}, NaN, Infinity]) {
+      for (const idempotency_key of ['', '   ', true, {}, NaN, Infinity]) {
         await analytics.track('purchase', { idempotency_key });
       }
 
@@ -770,6 +780,23 @@ describe('FormoAnalytics', () => {
       });
 
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not mark a wallet detected when the current chain is excluded', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+
+      await analytics.detect({ providerName: 'MetaMask', rdns: 'io.metamask' });
+
+      expect(mockSession.markWalletDetected).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+
+      // The wallet can still be detected once the user is on an allowed chain.
+      analytics.currentChainId = 137;
+      await analytics.detect({ providerName: 'MetaMask', rdns: 'io.metamask' });
+
+      expect(mockSession.markWalletDetected).toHaveBeenCalledWith('io.metamask');
+      expect(mockEventManager.addEvent).toHaveBeenCalled();
     });
 
     it('should not bind unscoped events to the cleared chain', async () => {
