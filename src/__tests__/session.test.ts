@@ -148,6 +148,21 @@ describe('FormoAnalyticsSession', () => {
       expect(mockStorage.remove).toHaveBeenCalledWith('wallet_detected');
     });
 
+    it('stamps markers written by a version without the timestamp, so they expire too', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null; // no wallet_marked_at: written before the expiry existed
+      });
+
+      const upgraded = new FormoAnalyticsSession();
+
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_marked_at', String(Date.now()));
+      expect(upgraded.isWalletDetected('io.metamask')).toBe(true);
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+      expect(upgraded.isWalletDetected('io.metamask')).toBe(false);
+    });
+
     it('keeps markers found in storage that are still within the day', () => {
       const recent = String(Date.now() - 1000);
       mockStorage.get.mockImplementation((key: string) => {

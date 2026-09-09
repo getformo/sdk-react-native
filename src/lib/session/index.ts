@@ -51,6 +51,12 @@ export class FormoAnalyticsSession {
         const parsed = JSON.parse(identified) as string[];
         this.identifiedWallets = new Set(parsed);
       }
+      // Markers written by a version without the timestamp start their day
+      // now; otherwise they would never expire.
+      if (!this.markedAt && (this.detectedWallets.size || this.identifiedWallets.size)) {
+        this.markedAt = Date.now();
+        storage().set(SESSION_WALLET_MARKED_AT_KEY, String(this.markedAt));
+      }
     } catch (error) {
       logger.debug("Session: Failed to load from storage", error);
     }
