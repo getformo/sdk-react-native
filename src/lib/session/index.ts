@@ -132,6 +132,11 @@ export class FormoAnalyticsSession {
   public clearIdentified(): void {
     this.identifiedWallets.clear();
     storage().remove(SESSION_WALLET_IDENTIFIED_KEY);
+    // No marker left: the next one starts a fresh day.
+    if (this.detectedWallets.size === 0) {
+      this.markedAt = 0;
+      storage().remove(SESSION_WALLET_MARKED_AT_KEY);
+    }
   }
 
   /**

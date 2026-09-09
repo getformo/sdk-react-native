@@ -187,6 +187,21 @@ describe('FormoAnalyticsSession', () => {
       expect(session.isWalletDetected('io.metamask')).toBe(true);
       expect(session.isWalletIdentified('0x123', 'io.metamask')).toBe(false);
       expect(mockStorage.remove).toHaveBeenCalledTimes(1);
+      expect(mockStorage.remove).not.toHaveBeenCalledWith('wallet_marked_at');
+    });
+
+    it('restarts the day when it removes the last marker', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletIdentified('0x123', 'io.metamask'); // identify without a detect
+
+      session.clearIdentified();
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
+
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+      expect(session.isWalletDetected('io.metamask')).toBe(true); // a full day from its own write
+      jest.useRealTimers();
     });
   });
 
