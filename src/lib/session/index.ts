@@ -80,17 +80,20 @@ export class FormoAnalyticsSession {
    */
   private loadFromStorage(): void {
     try {
-      if (storage().get(LEGACY_WALLET_MARKED_AT_KEY)) {
-        storage().remove(LEGACY_WALLET_MARKED_AT_KEY);
-      }
-      this.loadSet(this.detected);
-      this.loadSet(this.identified);
+      // A version that shared one expiry between both sets: its timestamp
+      // seeds each set that has none, so markers already past their day
+      // still expire now rather than a day from now.
+      const legacyAtRaw = storage().get(LEGACY_WALLET_MARKED_AT_KEY);
+      const legacyAt = legacyAtRaw ? parseInt(legacyAtRaw, 10) : 0;
+      if (legacyAtRaw) storage().remove(LEGACY_WALLET_MARKED_AT_KEY);
+      this.loadSet(this.detected, legacyAt);
+      this.loadSet(this.identified, legacyAt);
     } catch (error) {
       logger.debug("Session: Failed to load from storage", error);
     }
   }
 
-  private loadSet(set: MarkerSet): void {
+  private loadSet(set: MarkerSet, legacyAt = 0): void {
     const raw = storage().get(set.key);
     if (!raw) return;
     const parsed = JSON.parse(raw) as string[];
@@ -100,9 +103,10 @@ export class FormoAnalyticsSession {
     if (set.entries.size === 0) return;
     set.at = this.readTimestamp(set);
     if (!set.at) {
-      // Markers written by a version without the timestamp get their day
-      // from now; otherwise they would never expire.
-      set.at = Date.now();
+      // Markers written by a version without a per-set timestamp keep the
+      // shared one if there was one, else get their day from now; either
+      // way they expire.
+      set.at = Number.isFinite(legacyAt) && legacyAt > 0 ? Math.min(legacyAt, Date.now()) : Date.now();
       storage().set(set.atKey, String(set.at));
     }
     this.expireIfStale(set);
@@ -201,7 +205,8 @@ export class FormoAnalyticsSession {
     userId?: string,
     properties?: IFormoEventProperties
   ): { key: string; prefix: string } {
-    const prefix = `${address.toLowerCase()}:${rdns}:${userId ?? ""}`;
+    // The user id is encoded so a ":" inside it cannot read as a delimiter.
+    const prefix = `${address.toLowerCase()}:${rdns}:${userId === undefined ? "" : encodeURIComponent(userId)}`;
     const key = `${prefix}:${fingerprintProperties(properties)}`;
     return { key, prefix };
   }

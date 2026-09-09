@@ -140,6 +140,14 @@ describe('FormoAnalyticsSession', () => {
       expect(stored).toHaveLength(2);
     });
 
+    it('does not let a ":" in one user id match another wallet-user', () => {
+      session.markWalletIdentified(address, rdns, 'a:b');
+      session.markWalletIdentified(address, rdns, 'a');
+
+      expect(session.isWalletIdentified(address, rdns, 'a:b')).toBe(true);
+      expect(session.isWalletIdentified(address, rdns, 'a')).toBe(true);
+    });
+
     it('keeps only the latest profile of a wallet-user', () => {
       session.markWalletIdentified(address, rdns, 'user-a', { plan: 'free' });
       session.markWalletIdentified(address, rdns, 'user-a', { plan: 'pro' });
@@ -282,6 +290,22 @@ describe('FormoAnalyticsSession', () => {
 
       expect(fresh.isWalletDetected('io.metamask')).toBe(false);
       expect(fresh.isWalletIdentified('0x123', 'io.metamask')).toBe(true);
+    });
+
+    it('keeps the shared legacy timestamp, so markers already past their day expire now', () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        if (key === 'wallet_marked_at') return String(Date.now() - DAY - 1000); // shared, stale
+        return null;
+      });
+
+      const upgraded = new FormoAnalyticsSession();
+
+      expect(upgraded.isWalletDetected('io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
+      jest.useRealTimers();
     });
 
     it('stamps markers written by a version without the timestamp, so they expire too', () => {

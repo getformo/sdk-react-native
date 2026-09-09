@@ -37,19 +37,24 @@ export function stableStringify(
   }
   if (typeof value !== "object") return JSON.stringify(value);
 
+  // toJSON() first, as JSON.stringify does; the cycle check applies to what
+  // it returns, since that is what goes on the wire.
+  const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
+  if (typeof maybeToJSON === "function") {
+    return stableStringify((maybeToJSON as () => unknown).call(value), seen);
+  }
   if (seen.has(value)) {
     throw new TypeError("Converting circular structure to JSON");
   }
   seen.add(value);
   try {
-    const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
-    if (typeof maybeToJSON === "function") {
-      return stableStringify((maybeToJSON as () => unknown).call(value), seen);
-    }
     if (Array.isArray(value)) {
-      return `[${value
-        .map((item) => stableStringify(item, seen) ?? "null")
-        .join(",")}]`;
+      // By index, so a hole serializes as null the way JSON.stringify does.
+      const items: string[] = [];
+      for (let i = 0; i < value.length; i++) {
+        items.push(stableStringify(value[i], seen) ?? "null");
+      }
+      return `[${items.join(",")}]`;
     }
     const record = value as Record<string, unknown>;
     const parts: string[] = [];
