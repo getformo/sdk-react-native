@@ -29,7 +29,8 @@ export function stableStringify(value: unknown): string | undefined {
 /** A sorted, cycle-checked clone that JSON.stringify serializes as-is. */
 function canonical(value: unknown, key: string, stack: Set<unknown>, fromToJSON: boolean): unknown {
   // Objects, functions and bigints can carry a toJSON hook, as in JSON.stringify.
-  const hookable = value !== null && (typeof value === "object" || typeof value === "function" || typeof value === "bigint");
+  const t = typeof value;
+  const hookable = value !== null && (t === "object" || t === "function" || t === "bigint");
   if (!hookable) return value;
   // toJSON() runs once per property, as in JSON.stringify: what it returns
   // is serialized as-is, its own hook included, and a hook that returns its
@@ -38,8 +39,7 @@ function canonical(value: unknown, key: string, stack: Set<unknown>, fromToJSON:
   if (!fromToJSON) {
     const hook = (value as { toJSON?: unknown }).toJSON;
     if (typeof hook === "function") {
-      const out: unknown = Reflect.apply(hook, value, [key]);
-      if (out !== value) return canonical(out, key, stack, true);
+      return canonical(Reflect.apply(hook, value, [key]), key, stack, true);
     }
   }
   // A bigint without a hook is left to JSON.stringify, which throws on it.
@@ -49,7 +49,7 @@ function canonical(value: unknown, key: string, stack: Set<unknown>, fromToJSON:
   // Unboxed through the built-in methods, not an override on the instance.
   // Guarded: a runtime without BigInt must not throw here on every object.
   if (typeof BigInt !== "undefined" && value instanceof BigInt) {
-    return BigInt.prototype.valueOf.call(value); // JSON.stringify throws on it, as before
+    return BigInt.prototype.valueOf.call(value); // JSON.stringify throws on it
   }
   if (value instanceof Number) return Number.prototype.valueOf.call(value);
   if (value instanceof String) return String.prototype.valueOf.call(value);
@@ -65,13 +65,8 @@ function canonical(value: unknown, key: string, stack: Set<unknown>, fromToJSON:
     }
     const record = value as Record<string, unknown>;
     const sorted: Record<string, unknown> = Object.create(null);
-    for (const k of Object.keys(record).sort()) {
-      const v = record[k];
-      if (v === undefined || typeof v === "symbol") continue;
-      const c = canonical(v, k, stack, false);
-      // Omitted values (functions without a hook) never reach the clone.
-      if (c !== undefined) sorted[k] = c;
-    }
+    // JSON.stringify omits undefined and symbol values itself.
+    for (const k of Object.keys(record).sort()) sorted[k] = canonical(record[k], k, stack, false);
     return sorted;
   } finally {
     stack.delete(value);
