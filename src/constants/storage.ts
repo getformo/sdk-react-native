@@ -17,11 +17,15 @@ export const LOCAL_INSTALL_REFERRER_RESOLVED_KEY = "install_referrer_resolved";
 export const SESSION_USER_ID_KEY = "user_id";
 export const SESSION_TRAFFIC_SOURCE_KEY = "traffic_source";
 export const SESSION_WALLET_DETECTED_KEY = "wallet_detected";
-/** When the wallet markers were last written; they expire a day later, as on web. */
-export const SESSION_WALLET_MARKED_AT_KEY = "wallet_marked_at";
+export const SESSION_WALLET_IDENTIFIED_KEY = "wallet_identified";
+/**
+ * When each marker set was last written. Each set expires a day after its
+ * own last write, as each of the web SDK's marker cookies does.
+ */
+export const SESSION_WALLET_DETECTED_AT_KEY = "wallet_detected_at";
+export const SESSION_WALLET_IDENTIFIED_AT_KEY = "wallet_identified_at";
 /** Wallet markers live a day, the lifetime of the web SDK's marker cookie. */
 export const WALLET_MARKER_TTL_MS = 24 * 60 * 60 * 1000;
-export const SESSION_WALLET_IDENTIFIED_KEY = "wallet_identified";
 
 // Consent keys
 export const CONSENT_OPT_OUT_KEY = "opt_out_tracking";

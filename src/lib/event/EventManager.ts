@@ -3,7 +3,7 @@ import { logger } from "../logger";
 import { EVENT_CREATION_CANCELLED, EventFactory } from "./EventFactory";
 import { IEventFactory, IEventManager, IEventQueue } from "./types";
 import { isBlockedAddress } from "../../utils/address";
-import { hash } from "../../utils/hash";
+import { hash, stableStringify } from "../../utils/hash";
 
 /**
  * Event manager for React Native SDK
@@ -41,14 +41,15 @@ class EventManager implements IEventManager {
     // must not fingerprint the event under values it did not carry.
     // Custom events are fingerprinted on what the caller passed, so SDK
     // context that changes between two identical calls does not split them.
+    // Keys are sorted so the order the caller wrote them in does not either.
     const dedupKey =
       event.type === "track"
         ? hash(
-            JSON.stringify({
+            stableStringify({
               event: _event,
               address: address ?? null,
               userId: userId ?? null,
-            })
+            }) ?? ""
           )
         : undefined;
 

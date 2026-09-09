@@ -543,6 +543,19 @@ describe('FormoAnalytics', () => {
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
+    it('identify() without a user id carries the effective user on the wire, as the marker does', async () => {
+      analytics.currentUserId = 'restored-user';
+      mockEventManager.addEvent.mockClear();
+
+      await analytics.identify({ address: '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf', rdns: 'io.metamask' });
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.userId).toBe('restored-user');
+      expect(mockSession.markWalletIdentified).toHaveBeenCalledWith(
+        '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf', 'io.metamask', 'restored-user', undefined
+      );
+    });
+
     it('treats a null or undefined idempotency_key as no key and strips the property', async () => {
       for (const idempotency_key of [undefined, null]) {
         mockEventManager.addEvent.mockClear();
@@ -812,6 +825,78 @@ describe('FormoAnalytics', () => {
       await analytics.track('after reset');
 
       expect(mockEventManager.addEvent).toHaveBeenCalled();
+    });
+  });
+
+  describe('identify() tracking gate', () => {
+    const address = '0x742d35cc6634c0532925a3b844bc9e7595f3f6d2';
+
+    it('writes nothing on an excluded chain, and identifies on an allowed one', async () => {
+      analytics.options.tracking = { excludeChains: [1] };
+      analytics.currentChainId = 1;
+
+      await analytics.identify({ address, userId: 'user-1', rdns: 'io.metamask' });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(analytics.currentUserId).toBeUndefined();
+      expect(mockStorageInstance.set).not.toHaveBeenCalledWith('user_id', expect.anything());
+      expect(mockSession.markWalletIdentified).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+
+      analytics.currentChainId = 137;
+      await analytics.identify({ address, userId: 'user-1', rdns: 'io.metamask' });
+
+      expect(mockStorageInstance.set).toHaveBeenCalledWith('user_id', 'user-1');
+      expect(mockSession.markWalletIdentified).toHaveBeenCalledWith(
+        expect.any(String),
+        'io.metamask',
+        'user-1',
+        undefined
+      );
+      expect(mockEventManager.addEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'identify', userId: 'user-1' }),
+        expect.any(String),
+        'user-1'
+      );
+    });
+
+    it('writes nothing when tracking is off', async () => {
+      analytics.options.tracking = false;
+
+      await analytics.identify({ address, userId: 'user-1' });
+
+      expect(analytics.currentAddress).toBeUndefined();
+      expect(mockStorageInstance.set).not.toHaveBeenCalledWith('user_id', expect.anything());
+      expect(mockSession.markWalletIdentified).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
+    });
+
+    it('checks and marks the wallet with the user id and the properties', async () => {
+      const properties = { plan: 'pro' };
+
+      await analytics.identify({ address, userId: 'user-1', rdns: 'io.metamask' }, properties);
+
+      expect(mockSession.isWalletIdentified).toHaveBeenCalledWith(
+        expect.any(String),
+        'io.metamask',
+        'user-1',
+        properties
+      );
+      expect(mockSession.markWalletIdentified).toHaveBeenCalledWith(
+        expect.any(String),
+        'io.metamask',
+        'user-1',
+        properties
+      );
+    });
+
+    it('skips the event when the session already holds this identity', async () => {
+      mockSession.isWalletIdentified.mockReturnValue(true);
+
+      await analytics.identify({ address, userId: 'user-1' });
+
+      expect(mockSession.markWalletIdentified).not.toHaveBeenCalled();
+      expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
   });
 

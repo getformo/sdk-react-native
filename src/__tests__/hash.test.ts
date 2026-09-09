@@ -1,4 +1,4 @@
-import { hash, generateUUID } from '../utils/hash';
+import { hash, generateUUID, stableStringify } from '../utils/hash';
 
 describe('hash utilities', () => {
   describe('hash()', () => {
@@ -109,6 +109,126 @@ describe('hash utilities', () => {
         for (let i = 0; i < 100; i++) ids.add(generateUUID());
         expect(ids.size).toBe(100);
       });
+    });
+  });
+
+  describe('stableStringify()', () => {
+    it('throws for a bigint returned by a toJSON hook, as JSON.stringify does', () => {
+      const proto = BigInt.prototype as unknown as { toJSON?: () => string };
+      proto.toJSON = function () { return this.toString(); };
+      try {
+        expect(() => stableStringify({ p: { toJSON: () => BigInt(1) } })).toThrow(TypeError);
+        expect(() => stableStringify({ p: { toJSON: () => Object(BigInt(1)) } })).toThrow(TypeError);
+      } finally {
+        delete proto.toJSON;
+      }
+    });
+
+    it('unboxes primitive wrappers, as JSON.stringify does', () => {
+      const a = { amount: new Number(1), ok: new Boolean(true), s: new String('x') };
+      expect(stableStringify(a)).toBe(JSON.stringify(a));
+      expect(stableStringify({ amount: new Number(1) })).not.toBe(stableStringify({ amount: new Number(2) }));
+    });
+
+    it('serializes a self-returning toJSON by its fields, as JSON.stringify does', () => {
+      const self: Record<string, unknown> = { b: 2, a: 1 };
+      self.toJSON = function () { return this; };
+      expect(stableStringify(self)).toBe('{"a":1,"b":2}');
+    });
+
+    it('passes the property key to toJSON and unboxes through the built-in methods', () => {
+      const keyed = { toJSON: (k: string) => k };
+      expect(stableStringify({ x: keyed })).toBe(JSON.stringify({ x: keyed }));
+      expect(stableStringify({ x: keyed })).not.toBe(stableStringify({ y: keyed }));
+      // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
+      const boxed = new String('real') as String & { valueOf: () => string };
+      boxed.valueOf = () => 'override';
+      expect(stableStringify({ s: boxed })).toBe(JSON.stringify({ s: boxed }));
+    });
+
+    it('runs toJSON once per property, as JSON.stringify does', () => {
+      const b = { toJSON: () => ({ v: 2 }) };
+      const a = { toJSON: () => b };
+      // JSON.stringify serializes what a.toJSON returned without calling b.toJSON.
+      expect(stableStringify({ p: a })).toBe(JSON.stringify({ p: a }));
+      const x: Record<string, unknown> = {}; const y: Record<string, unknown> = {};
+      x.toJSON = () => y; y.toJSON = () => x; // mutually returning hooks
+      expect(stableStringify({ p: x })).toBe(JSON.stringify({ p: x }));
+    });
+
+    it('honors a toJSON hook on a function value, and reads the hook once', () => {
+      const fn = Object.assign(() => undefined, { toJSON: () => 'fn' });
+      expect(stableStringify({ f: fn })).toBe(JSON.stringify({ f: fn }));
+      expect(stableStringify({ g: () => undefined })).toBe(JSON.stringify({ g: () => undefined }));
+      let reads = 0;
+      const flaky = { a: 1, get toJSON() { reads++; return reads === 1 ? () => 'once' : undefined; } };
+      expect(stableStringify({ p: flaky })).toBe('{"p":"once"}');
+      expect(reads).toBe(1);
+    });
+
+    it('honors a BigInt.prototype.toJSON hook and an overridden call on a hook', () => {
+      const proto = BigInt.prototype as unknown as { toJSON?: () => string };
+      proto.toJSON = function () { return this.toString(); };
+      try {
+        expect(stableStringify({ amount: 123n })).toBe(JSON.stringify({ amount: 123n }));
+      } finally {
+        delete proto.toJSON;
+      }
+      expect(() => stableStringify({ amount: 5n })).toThrow(TypeError);
+      const hook = Object.assign(() => 'ok', { call: () => { throw new Error('overridden'); } });
+      expect(stableStringify({ p: { toJSON: hook } })).toBe(JSON.stringify({ p: { toJSON: hook } }));
+    });
+
+    it('rejects a boxed bigint and reads an array length once', () => {
+      expect(() => stableStringify({ n: Object(BigInt(1)) })).toThrow(TypeError);
+      let reads = 0;
+      const growing = new Proxy([1, 2], { get: (t, p, r) => { if (p === 'length') { reads++; if (reads > 1) t.push(0); } return Reflect.get(t, p, r); } });
+      expect(stableStringify({ a: growing })).toBe('{"a":[1,2]}');
+    });
+
+    it('serializes a sparse array hole as null, as JSON.stringify does', () => {
+      const sparse: unknown[] = [];
+      sparse[2] = 1;
+      expect(stableStringify({ a: sparse })).toBe(JSON.stringify({ a: sparse }));
+    });
+
+    it('applies toJSON before the cycle check', () => {
+      const shared = { toJSON: () => 'x' };
+      expect(stableStringify({ a: shared, b: shared })).toBe(JSON.stringify({ a: shared, b: shared }));
+    });
+
+    it('sorts object keys recursively', () => {
+      expect(stableStringify({ b: 1, a: { d: 2, c: 3 } })).toBe(
+        '{"a":{"c":3,"d":2},"b":1}'
+      );
+    });
+
+    it('keeps array order', () => {
+      expect(stableStringify([2, 1])).toBe('[2,1]');
+      expect(stableStringify([2, 1])).not.toBe(stableStringify([1, 2]));
+    });
+
+    it('follows JSON.stringify for primitives and omitted values', () => {
+      expect(stableStringify({ a: undefined, b: () => 1, c: null, d: NaN })).toBe(
+        '{"c":null,"d":null}'
+      );
+      expect(stableStringify([undefined])).toBe('[null]');
+      expect(stableStringify('x')).toBe('"x"');
+      expect(stableStringify(undefined)).toBeUndefined();
+      const date = new Date('2026-01-01T00:00:00Z');
+      expect(stableStringify({ at: date })).toBe(JSON.stringify({ at: date }));
+    });
+
+    it('throws where JSON.stringify throws', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      expect(() => stableStringify(cyclic)).toThrow(TypeError);
+      expect(() => stableStringify({ n: BigInt(1) })).toThrow(TypeError);
+    });
+
+    it('serializes a repeated sibling object twice, not as a cycle', () => {
+      const shared = { a: 1 };
+      expect(stableStringify({ x: shared, y: shared })).toBe('{"x":{"a":1},"y":{"a":1}}');
     });
   });
 });

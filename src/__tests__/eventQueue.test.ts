@@ -514,7 +514,9 @@ describe("EventQueue", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Opt out, then the same event is produced again and re-enqueued.
+      // Only sends after the opt-out count from here on.
       queue.clear();
+      fetchMock.mockClear();
       await queue.enqueue(makeEvent(1));
       await settle();
 
@@ -524,8 +526,6 @@ describe("EventQueue", () => {
       await settle();
 
       // A third identical enqueue must still be recognised as a duplicate.
-      fetchMock.mockClear();
-      fetchMock.mockResolvedValue({ ok: true, status: 200 });
       await queue.enqueue(makeEvent(1));
       await queue.flush();
       await settle();
@@ -534,6 +534,26 @@ describe("EventQueue", () => {
         ([, init]) => JSON.parse(init.body as string) as Array<{ event: string }>
       );
       expect(delivered.filter((e) => e.event === "event-1")).toHaveLength(1);
+
+      await queue.cleanup();
+    });
+  });
+
+  describe("first event after clear()", () => {
+    it("ships at once instead of waiting for the batch interval", async () => {
+      const queue = makeQueue({ flushAt: 20 });
+
+      await queue.enqueue(makeEvent(1));
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Opt out, then opt in: the next event starts a fresh lifecycle.
+      queue.clear();
+      await queue.enqueue(makeEvent(2));
+      await settle();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(sentEvents().map((e) => e.event)).toEqual(["event-1", "event-2"]);
 
       await queue.cleanup();
     });
@@ -1159,6 +1179,32 @@ describe("EventQueue dedup window", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("collapses two events whose properties differ only in key order", async () => {
+    const queue = makeQueue();
+
+    await queue.enqueue(event({ properties: { currency: "USD", amount: 10 } }));
+    await settle();
+    await queue.enqueue(event({ properties: { amount: 10, currency: "USD" } }));
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(1);
+    await queue.cleanup();
+  });
+
+  it("keeps two events whose array order differs", async () => {
+    const queue = makeQueue();
+
+    await queue.enqueue(event({ properties: { tags: ["a", "b"] } }));
+    await settle();
+    await queue.enqueue(event({ properties: { tags: ["b", "a"] } }));
+    await queue.flush();
+    await settle();
+
+    expect(sent()).toHaveLength(2);
+    await queue.cleanup();
   });
 
   it("gives separate unkeyed custom events distinct random ids", async () => {

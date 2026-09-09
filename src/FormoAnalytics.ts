@@ -700,7 +700,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     try {
       const { userId, address, providerName, rdns } = params;
       logger.info("Identify", address, userId, providerName, rdns);
-      if (this.hasOptedOutTracking()) return;
+      // The full policy, not consent alone: identify persists the user id
+      // and marks the wallet before trackEvent applies the chain gate, and
+      // a marker written on an excluded chain would silence a later
+      // identify on an allowed one.
+      if (!this.shouldTrack()) {
+        logger.info("identify() skipped: tracking is suppressed for this visitor or chain");
+        return;
+      }
 
       let validAddress: Address | undefined = undefined;
       if (address) {
@@ -723,26 +730,21 @@ export class FormoAnalytics implements IFormoAnalytics {
         storage().set(SESSION_USER_ID_KEY, userId);
       }
 
-      // Check for duplicate identify
-      const isAlreadyIdentified = validAddress
-        ? this.session.isWalletIdentified(validAddress, rdns || "")
-        : false;
-
-      if (isAlreadyIdentified) {
-        logger.info(
-          `Identify: Wallet ${providerName || "Unknown"} with address ${validAddress} already identified`
-        );
-        return;
-      }
-
-      // Mark as identified
+      // Dedup on the effective user, as the wire event carries it, not only
+      // the argument: a re-identify that changes the user is sent again.
       if (validAddress) {
-        this.session.markWalletIdentified(validAddress, rdns || "");
+        if (this.session.isWalletIdentified(validAddress, rdns || "", this.currentUserId, properties)) {
+          logger.info(
+            `Identify: Wallet ${providerName || "Unknown"} with address ${validAddress} already identified`
+          );
+          return;
+        }
+        this.session.markWalletIdentified(validAddress, rdns || "", this.currentUserId, properties);
       }
 
       await this.trackEvent(
         EventType.IDENTIFY,
-        { address: validAddress, providerName, userId, rdns },
+        { address: validAddress, providerName, userId: this.currentUserId, rdns },
         properties,
         context,
         callback
@@ -764,7 +766,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     // The full policy, not consent alone: a detect refused by the chain gate
     // after the marker is written would silence the wallet for the session.
     if (!this.shouldTrack()) {
-      logger.info("detect() skipped: tracking is suppressed for this wallet or chain");
+      logger.info("detect() skipped: tracking is suppressed for this visitor or chain");
       return;
     }
     if (this.session.isWalletDetected(rdns)) {
