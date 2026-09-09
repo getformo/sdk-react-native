@@ -308,19 +308,21 @@ describe('FormoAnalyticsSession', () => {
       jest.useRealTimers();
     });
 
-    it('stamps markers written by a version without the timestamp, so they expire too', () => {
+    it('stamps markers written by a version without per-set timestamps, so they expire too', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      const shared = Date.now() - 1000;
       mockStorage.get.mockImplementation((key: string) => {
         if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
         if (key === 'wallet_identified') return JSON.stringify(['0x123:io.metamask']);
-        if (key === 'wallet_marked_at') return String(Date.now() - 1000);
+        if (key === 'wallet_marked_at') return String(shared);
         return null; // no per-set timestamp: written before it existed
       });
 
       const upgraded = new FormoAnalyticsSession();
 
-      expect(mockStorage.set).toHaveBeenCalledWith('wallet_detected_at', String(Date.now()));
-      expect(mockStorage.set).toHaveBeenCalledWith('wallet_identified_at', String(Date.now()));
+      // Each set keeps the shared timestamp, so its remaining day is unchanged.
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_detected_at', String(shared));
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_identified_at', String(shared));
       expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
       expect(upgraded.isWalletDetected('io.metamask')).toBe(true);
       expect(upgraded.isWalletIdentified('0x123', 'io.metamask')).toBe(true);

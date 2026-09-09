@@ -113,6 +113,17 @@ describe('hash utilities', () => {
   });
 
   describe('stableStringify()', () => {
+    it('serializes a sparse array hole as null, as JSON.stringify does', () => {
+      const sparse: unknown[] = [];
+      sparse[2] = 1;
+      expect(stableStringify({ a: sparse })).toBe(JSON.stringify({ a: sparse }));
+    });
+
+    it('applies toJSON before the cycle check', () => {
+      const shared = { toJSON: () => 'x' };
+      expect(stableStringify({ a: shared, b: shared })).toBe(JSON.stringify({ a: shared, b: shared }));
+    });
+
     it('sorts object keys recursively', () => {
       expect(stableStringify({ b: 1, a: { d: 2, c: 3 } })).toBe(
         '{"a":{"c":3,"d":2},"b":1}'
