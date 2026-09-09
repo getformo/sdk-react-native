@@ -154,6 +154,19 @@ describe('hash utilities', () => {
       expect(stableStringify({ p: flaky })).toBe('{"p":"once"}');
     });
 
+    it('honors a BigInt.prototype.toJSON hook and an overridden call on a hook', () => {
+      const proto = BigInt.prototype as unknown as { toJSON?: () => string };
+      proto.toJSON = function () { return this.toString(); };
+      try {
+        expect(stableStringify({ amount: 123n })).toBe(JSON.stringify({ amount: 123n }));
+      } finally {
+        delete proto.toJSON;
+      }
+      expect(() => stableStringify({ amount: 5n })).toThrow(TypeError);
+      const hook = Object.assign(() => 'ok', { call: () => { throw new Error('overridden'); } });
+      expect(stableStringify({ p: { toJSON: hook } })).toBe(JSON.stringify({ p: { toJSON: hook } }));
+    });
+
     it('throws on a cycle, as JSON.stringify does', () => {
       const cyc: Record<string, unknown> = { a: 1 };
       cyc.self = cyc;
