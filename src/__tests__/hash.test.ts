@@ -129,6 +129,7 @@ describe('hash utilities', () => {
       const keyed = { toJSON: (k: string) => k };
       expect(stableStringify({ x: keyed })).toBe(JSON.stringify({ x: keyed }));
       expect(stableStringify({ x: keyed })).not.toBe(stableStringify({ y: keyed }));
+      // eslint-disable-next-line @typescript-eslint/no-wrapper-object-types
       const boxed = new String('real') as String & { valueOf: () => string };
       boxed.valueOf = () => 'override';
       expect(stableStringify({ s: boxed })).toBe(JSON.stringify({ s: boxed }));
