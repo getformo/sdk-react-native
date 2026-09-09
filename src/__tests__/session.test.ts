@@ -102,7 +102,63 @@ describe('FormoAnalyticsSession', () => {
 
     it('should remove from storage when clearing', () => {
       session.clear();
-      expect(mockStorage.remove).toHaveBeenCalledTimes(2);
+      expect(mockStorage.remove).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('expiry', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('stamps the first write and keeps markers within the day', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_marked_at', String(Date.now()));
+
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+    });
+
+    it('forgets every marker a day after the first write, in memory', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      session.markWalletIdentified('0x123', 'io.metamask');
+
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+
+      expect(session.isWalletDetected('io.metamask')).toBe(false);
+      expect(session.isWalletIdentified('0x123', 'io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
+    });
+
+    it('drops stale markers found in storage on load', () => {
+      const stale = String(Date.now() - DAY - 1000);
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_marked_at') return stale;
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null;
+      });
+
+      const fresh = new FormoAnalyticsSession();
+
+      expect(fresh.isWalletDetected('io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_detected');
+    });
+
+    it('keeps markers found in storage that are still within the day', () => {
+      const recent = String(Date.now() - 1000);
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_marked_at') return recent;
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null;
+      });
+
+      const fresh = new FormoAnalyticsSession();
+
+      expect(fresh.isWalletDetected('io.metamask')).toBe(true);
     });
   });
 
