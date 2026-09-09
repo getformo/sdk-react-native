@@ -135,6 +135,16 @@ describe('hash utilities', () => {
       expect(stableStringify({ s: boxed })).toBe(JSON.stringify({ s: boxed }));
     });
 
+    it('runs toJSON once per property, as JSON.stringify does', () => {
+      const b = { toJSON: () => ({ v: 2 }) };
+      const a = { toJSON: () => b };
+      // JSON.stringify serializes what a.toJSON returned without calling b.toJSON.
+      expect(stableStringify({ p: a })).toBe(JSON.stringify({ p: a }));
+      const x: Record<string, unknown> = {}; const y: Record<string, unknown> = {};
+      x.toJSON = () => y; y.toJSON = () => x; // mutually returning hooks
+      expect(stableStringify({ p: x })).toBe(JSON.stringify({ p: x }));
+    });
+
     it('throws on a cycle, as JSON.stringify does', () => {
       const cyc: Record<string, unknown> = { a: 1 };
       cyc.self = cyc;

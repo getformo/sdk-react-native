@@ -101,6 +101,12 @@ export class FormoAnalyticsSession {
       parsed.slice(-MAX_MARKER_ENTRIES).map((entry) => this.migrateEntry(set, entry))
     );
     if (set.entries.size === 0) return;
+    // A truncated or migrated set is written back, or every cold start
+    // would load the legacy value again.
+    const migrated = Array.from(set.entries);
+    if (migrated.length !== parsed.length || migrated.some((e, i) => e !== parsed[i])) {
+      storage().set(set.key, JSON.stringify(migrated));
+    }
     set.at = this.readTimestamp(set);
     if (!set.at) {
       // Markers written by a version without a per-set timestamp keep the
