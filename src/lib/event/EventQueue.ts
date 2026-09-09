@@ -7,7 +7,7 @@ import {
   millisecondsToSecond,
   isNetworkError,
 } from "../../utils";
-import { hash, generateUUID } from "../../utils/hash";
+import { hash, generateUUID, stableStringify } from "../../utils/hash";
 import { toDateHourMinute } from "../../utils/timestamp";
 import { logger } from "../logger";
 import { EnqueueOptions, IEventQueue } from "./types";
@@ -261,7 +261,8 @@ export class EventQueue implements IEventQueue {
   /**
    * Fallback fingerprint: the event without its timestamp and without the
    * volatile generated context, so a double-fire across a minute boundary
-   * or a screen rotation still matches. Custom events pass a pre-enrichment
+   * or a screen rotation still matches. Keys are sorted so property order
+   * does not split one event in two. Custom events pass a pre-enrichment
    * fingerprint instead.
    */
   private generateDedupKey(event: IFormoEvent): string {
@@ -270,7 +271,7 @@ export class EventQueue implements IEventQueue {
     if (stableContext) {
       for (const field of VOLATILE_CONTEXT_FIELDS) delete stableContext[field];
     }
-    return hash(JSON.stringify({ ...rest, context: stableContext }));
+    return hash(stableStringify({ ...rest, context: stableContext }) ?? "");
   }
 
   /**
@@ -702,6 +703,9 @@ export class EventQueue implements IEventQueue {
     this.generation++;
     this.queue = [];
     this.payloadHashes.clear();
+    // A fresh lifecycle: the first event after opt-in ships at once, the
+    // way the first event of the app session does.
+    this.flushed = false;
 
     if (this.timer) {
       clearTimeout(this.timer);

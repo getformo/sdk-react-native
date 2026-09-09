@@ -700,7 +700,14 @@ export class FormoAnalytics implements IFormoAnalytics {
     try {
       const { userId, address, providerName, rdns } = params;
       logger.info("Identify", address, userId, providerName, rdns);
-      if (this.hasOptedOutTracking()) return;
+      // The full policy, not consent alone: identify persists the user id
+      // and marks the wallet before trackEvent applies the chain gate, and
+      // a marker written on an excluded chain would silence a later
+      // identify on an allowed one.
+      if (!this.shouldTrack()) {
+        logger.info("identify() skipped: tracking is suppressed for this wallet or chain");
+        return;
+      }
 
       let validAddress: Address | undefined = undefined;
       if (address) {
@@ -725,7 +732,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
       // Check for duplicate identify
       const isAlreadyIdentified = validAddress
-        ? this.session.isWalletIdentified(validAddress, rdns || "")
+        ? this.session.isWalletIdentified(validAddress, rdns || "", userId, properties)
         : false;
 
       if (isAlreadyIdentified) {
@@ -737,7 +744,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
       // Mark as identified
       if (validAddress) {
-        this.session.markWalletIdentified(validAddress, rdns || "");
+        this.session.markWalletIdentified(validAddress, rdns || "", userId, properties);
       }
 
       await this.trackEvent(

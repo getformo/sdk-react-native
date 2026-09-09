@@ -95,6 +95,44 @@ describe("EventManager custom-event identity", () => {
     expect(b![3].dedupKey).toBe(a![3].dedupKey);
   });
 
+  it("fingerprints the same properties the same whatever their key order", async () => {
+    const { queue, manager } = makeManager();
+
+    await manager.addEvent({ type: "track", event: "Purchase", properties: { currency: "USD", amount: 10 } });
+    await manager.addEvent({ type: "track", event: "Purchase", properties: { amount: 10, currency: "USD" } });
+
+    const [a, b] = enqueueCalls(queue);
+    expect(b![3].dedupKey).toBe(a![3].dedupKey);
+  });
+
+  it("sorts keys in nested objects too", async () => {
+    const { queue, manager } = makeManager();
+
+    await manager.addEvent({
+      type: "track",
+      event: "Purchase",
+      properties: { item: { sku: "x", qty: 1 }, currency: "USD" },
+    });
+    await manager.addEvent({
+      type: "track",
+      event: "Purchase",
+      properties: { currency: "USD", item: { qty: 1, sku: "x" } },
+    });
+
+    const [a, b] = enqueueCalls(queue);
+    expect(b![3].dedupKey).toBe(a![3].dedupKey);
+  });
+
+  it("keeps array order in the fingerprint", async () => {
+    const { queue, manager } = makeManager();
+
+    await manager.addEvent({ type: "track", event: "Purchase", properties: { tags: ["a", "b"] } });
+    await manager.addEvent({ type: "track", event: "Purchase", properties: { tags: ["b", "a"] } });
+
+    const [a, b] = enqueueCalls(queue);
+    expect(b![3].dedupKey).not.toBe(a![3].dedupKey);
+  });
+
   it("keeps caller-supplied context in the fingerprint", async () => {
     const { queue, manager } = makeManager();
     const call = { type: "track" as const, event: "Order Placed", properties: { market: "ZEC" } };

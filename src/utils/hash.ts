@@ -15,6 +15,57 @@ export function hash(input: string): string {
   return bytesToHex(hashBytes);
 }
 
+/**
+ * Serialize a value so equal values give the same string whatever the key
+ * insertion order. Object keys are sorted recursively; arrays keep their
+ * order. Values follow JSON.stringify: undefined, functions and symbols are
+ * omitted from objects and become null in arrays, non-finite numbers become
+ * null, and toJSON() is honored. Returns undefined when JSON would omit the
+ * value, and throws where JSON.stringify throws (BigInt, cycles), so a
+ * payload that cannot go on the wire fails at the same point as before.
+ */
+export function stableStringify(
+  value: unknown,
+  seen: Set<unknown> = new Set()
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "function") return undefined;
+  if (typeof value === "symbol") return undefined;
+  if (value === null) return "null";
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? JSON.stringify(value) : "null";
+  }
+  if (typeof value !== "object") return JSON.stringify(value);
+
+  if (seen.has(value)) {
+    throw new TypeError("Converting circular structure to JSON");
+  }
+  seen.add(value);
+  try {
+    const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof maybeToJSON === "function") {
+      return stableStringify((maybeToJSON as () => unknown).call(value), seen);
+    }
+    if (Array.isArray(value)) {
+      return `[${value
+        .map((item) => stableStringify(item, seen) ?? "null")
+        .join(",")}]`;
+    }
+    const record = value as Record<string, unknown>;
+    const parts: string[] = [];
+    for (const key of Object.keys(record).sort()) {
+      const encoded = stableStringify(record[key], seen);
+      if (encoded === undefined) continue;
+      parts.push(`${JSON.stringify(key)}:${encoded}`);
+    }
+    return `{${parts.join(",")}}`;
+  } finally {
+    // Only cycles are guarded. The same object used twice as siblings must
+    // serialize the same both times.
+    seen.delete(value);
+  }
+}
+
 // Monotonic counter for the no-Web-Crypto fallback below. Guarantees the
 // fallback produces distinct ids even for calls within the same millisecond.
 let uuidFallbackCounter = 0;

@@ -1,4 +1,4 @@
-import { hash, generateUUID } from '../utils/hash';
+import { hash, generateUUID, stableStringify } from '../utils/hash';
 
 describe('hash utilities', () => {
   describe('hash()', () => {
@@ -109,6 +109,42 @@ describe('hash utilities', () => {
         for (let i = 0; i < 100; i++) ids.add(generateUUID());
         expect(ids.size).toBe(100);
       });
+    });
+  });
+
+  describe('stableStringify()', () => {
+    it('sorts object keys recursively', () => {
+      expect(stableStringify({ b: 1, a: { d: 2, c: 3 } })).toBe(
+        '{"a":{"c":3,"d":2},"b":1}'
+      );
+    });
+
+    it('keeps array order', () => {
+      expect(stableStringify([2, 1])).toBe('[2,1]');
+      expect(stableStringify([2, 1])).not.toBe(stableStringify([1, 2]));
+    });
+
+    it('follows JSON.stringify for primitives and omitted values', () => {
+      expect(stableStringify({ a: undefined, b: () => 1, c: null, d: NaN })).toBe(
+        '{"c":null,"d":null}'
+      );
+      expect(stableStringify([undefined])).toBe('[null]');
+      expect(stableStringify('x')).toBe('"x"');
+      expect(stableStringify(undefined)).toBeUndefined();
+      const date = new Date('2026-01-01T00:00:00Z');
+      expect(stableStringify({ at: date })).toBe(JSON.stringify({ at: date }));
+    });
+
+    it('throws where JSON.stringify throws', () => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic.self = cyclic;
+      expect(() => stableStringify(cyclic)).toThrow(TypeError);
+      expect(() => stableStringify({ n: BigInt(1) })).toThrow(TypeError);
+    });
+
+    it('serializes a repeated sibling object twice, not as a cycle', () => {
+      const shared = { a: 1 };
+      expect(stableStringify({ x: shared, y: shared })).toBe('{"x":{"a":1},"y":{"a":1}}');
     });
   });
 });
