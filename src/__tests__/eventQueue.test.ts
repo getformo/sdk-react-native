@@ -87,7 +87,7 @@ describe("EventQueue", () => {
       expect(callback).toHaveBeenCalledTimes(1);
       expect(callback.mock.calls[0][0]).toBeUndefined();
       expect(event.properties?.measurement).toBeInstanceOf(Number);
-      expect((event.properties?.measurement as Number).valueOf()).toBe(2 ** 64);
+      expect(Number.prototype.valueOf.call(event.properties?.measurement)).toBe(2 ** 64);
     } finally {
       await queue.cleanup();
       jest.useRealTimers();
