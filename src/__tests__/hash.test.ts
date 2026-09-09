@@ -113,6 +113,16 @@ describe('hash utilities', () => {
   });
 
   describe('stableStringify()', () => {
+    it('throws for a bigint returned by a toJSON hook, as JSON.stringify does', () => {
+      const proto = BigInt.prototype as unknown as { toJSON?: () => string };
+      proto.toJSON = function () { return this.toString(); };
+      try {
+        expect(() => stableStringify({ p: { toJSON: () => BigInt(1) } })).toThrow(TypeError);
+      } finally {
+        delete proto.toJSON;
+      }
+    });
+
     it('unboxes primitive wrappers, as JSON.stringify does', () => {
       const a = { amount: new Number(1), ok: new Boolean(true), s: new String('x') };
       expect(stableStringify(a)).toBe(JSON.stringify(a));
