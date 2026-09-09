@@ -75,7 +75,7 @@ describe("EventQueue", () => {
       const event = {
         ...makeEvent(1),
         context: { measurement: -(2 ** 63) },
-        properties: { measurement: 2 ** 64, amount: 12.5 },
+      properties: { measurement: new Number(2 ** 64), amount: 12.5 },
       } as unknown as IFormoEvent;
       await queue.enqueue(event, callback);
       await jest.advanceTimersByTimeAsync(1001);
@@ -86,7 +86,8 @@ describe("EventQueue", () => {
       expect(sent.properties).toEqual({ measurement: String(2 ** 64), amount: 12.5 });
       expect(callback).toHaveBeenCalledTimes(1);
       expect(callback.mock.calls[0][0]).toBeUndefined();
-      expect(event.properties?.measurement).toBe(2 ** 64);
+      expect(event.properties?.measurement).toBeInstanceOf(Number);
+      expect((event.properties?.measurement as Number).valueOf()).toBe(2 ** 64);
     } finally {
       await queue.cleanup();
       jest.useRealTimers();
