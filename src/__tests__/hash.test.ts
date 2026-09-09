@@ -167,6 +167,13 @@ describe('hash utilities', () => {
       expect(stableStringify({ p: { toJSON: hook } })).toBe(JSON.stringify({ p: { toJSON: hook } }));
     });
 
+    it('rejects a boxed bigint and reads an array length once', () => {
+      expect(() => stableStringify({ n: Object(BigInt(1)) })).toThrow(TypeError);
+      let reads = 0;
+      const growing = new Proxy([1, 2], { get: (t, p, r) => { if (p === 'length') { reads++; if (reads > 1) t.push(0); } return Reflect.get(t, p, r); } });
+      expect(stableStringify({ a: growing })).toBe('{"a":[1,2]}');
+    });
+
     it('throws on a cycle, as JSON.stringify does', () => {
       const cyc: Record<string, unknown> = { a: 1 };
       cyc.self = cyc;
