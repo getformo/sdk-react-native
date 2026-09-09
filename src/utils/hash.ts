@@ -23,8 +23,7 @@ export function hash(input: string): string {
  * cycle throws. Returns undefined where JSON.stringify would.
  */
 export function stableStringify(value: unknown): string | undefined {
-  const out = canonical(value, "", new Set(), false);
-  return out === undefined ? undefined : JSON.stringify(out);
+  return JSON.stringify(canonical(value, "", new Set(), false));
 }
 
 /** A sorted, cycle-checked clone that JSON.stringify serializes as-is. */

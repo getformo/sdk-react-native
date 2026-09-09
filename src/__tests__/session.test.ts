@@ -28,6 +28,15 @@ describe('FormoAnalyticsSession', () => {
     session = new FormoAnalyticsSession();
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** What a fresh session finds in storage, by key. */
+  const givenStored = (values: Record<string, string>) => {
+    mockStorage.get.mockImplementation((key: string) => values[key] ?? null);
+  };
+
   describe('wallet detection', () => {
     it('should return false for undetected wallet', () => {
       expect(session.isWalletDetected('io.metamask')).toBe(false);
@@ -201,10 +210,6 @@ describe('FormoAnalyticsSession', () => {
   describe('expiry', () => {
     const DAY = 24 * 60 * 60 * 1000;
 
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('renews the day on every write, so a later marker gets a full day', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
       session.markWalletDetected('io.metamask');
@@ -267,11 +272,9 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('drops stale markers found in storage on load', () => {
-      const stale = String(Date.now() - DAY - 1000);
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected_at') return stale;
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        return null;
+      givenStored({
+        wallet_detected_at: String(Date.now() - DAY - 1000),
+        wallet_detected: JSON.stringify(['io.metamask']),
       });
 
       const fresh = new FormoAnalyticsSession();
@@ -281,14 +284,11 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('drops only the stale set on load', () => {
-      const stale = String(Date.now() - DAY - 1000);
-      const recent = String(Date.now() - 1000);
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected_at') return stale;
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        if (key === 'wallet_identified_at') return recent;
-        if (key === 'wallet_identified') return JSON.stringify(['0x123:io.metamask::']);
-        return null;
+      givenStored({
+        wallet_detected_at: String(Date.now() - DAY - 1000),
+        wallet_detected: JSON.stringify(['io.metamask']),
+        wallet_identified_at: String(Date.now() - 1000),
+        wallet_identified: JSON.stringify(['0x123:io.metamask::']),
       });
 
       const fresh = new FormoAnalyticsSession();
@@ -298,29 +298,26 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('keeps the shared legacy timestamp, so markers already past their day expire now', () => {
-      const DAY = 24 * 60 * 60 * 1000;
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        if (key === 'wallet_marked_at') return String(Date.now() - DAY - 1000); // shared, stale
-        return null;
+      givenStored({
+        wallet_detected: JSON.stringify(['io.metamask']),
+        wallet_marked_at: String(Date.now() - DAY - 1000), // shared, stale
       });
 
       const upgraded = new FormoAnalyticsSession();
 
       expect(upgraded.isWalletDetected('io.metamask')).toBe(false);
       expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
-      jest.useRealTimers();
     });
 
     it('stamps markers written by a version without per-set timestamps, so they expire too', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
       const shared = Date.now() - 1000;
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        if (key === 'wallet_identified') return JSON.stringify(['0x123:io.metamask']);
-        if (key === 'wallet_marked_at') return String(shared);
-        return null; // no per-set timestamp: written before it existed
+      // No per-set timestamps: written before they existed.
+      givenStored({
+        wallet_detected: JSON.stringify(['io.metamask']),
+        wallet_identified: JSON.stringify(['0x123:io.metamask']),
+        wallet_marked_at: String(shared),
       });
 
       const upgraded = new FormoAnalyticsSession();
@@ -337,11 +334,9 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('keeps markers found in storage that are still within the day', () => {
-      const recent = String(Date.now() - 1000);
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected_at') return recent;
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        return null;
+      givenStored({
+        wallet_detected_at: String(Date.now() - 1000),
+        wallet_detected: JSON.stringify(['io.metamask']),
       });
 
       const fresh = new FormoAnalyticsSession();
@@ -352,11 +347,9 @@ describe('FormoAnalyticsSession', () => {
     it('clamps a future timestamp to now on load', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
       // Written while the clock was set to 2027, then the clock was corrected.
-      const future = String(new Date('2027-01-01T00:00:00Z').getTime());
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected_at') return future;
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        return null;
+      givenStored({
+        wallet_detected_at: String(new Date('2027-01-01T00:00:00Z').getTime()),
+        wallet_detected: JSON.stringify(['io.metamask']),
       });
 
       const fresh = new FormoAnalyticsSession();
@@ -382,10 +375,9 @@ describe('FormoAnalyticsSession', () => {
 
     it('treats a non-finite timestamp as missing and stamps now', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected_at') return 'not-a-number';
-        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
-        return null;
+      givenStored({
+        wallet_detected_at: 'not-a-number',
+        wallet_detected: JSON.stringify(['io.metamask']),
       });
 
       const fresh = new FormoAnalyticsSession();
@@ -396,10 +388,6 @@ describe('FormoAnalyticsSession', () => {
   });
 
   describe('clearIdentified()', () => {
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
     it('forgets identified wallets but keeps detected ones', () => {
       session.markWalletDetected('io.metamask');
       session.markWalletIdentified('0x123', 'io.metamask');
@@ -430,12 +418,7 @@ describe('FormoAnalyticsSession', () => {
 
   describe('loading from storage', () => {
     it('should load detected wallets from storage', () => {
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key.includes('detected')) {
-          return JSON.stringify(['io.metamask', 'com.coinbase.wallet']);
-        }
-        return null;
-      });
+      givenStored({ wallet_detected: JSON.stringify(['io.metamask', 'com.coinbase.wallet']) });
 
       const loadedSession = new FormoAnalyticsSession();
 
@@ -444,11 +427,8 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('should load identified wallets from storage', () => {
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_identified') {
-          return JSON.stringify(['0x123:io.metamask::', '0x456:io.metamask:user-a:']);
-        }
-        return null;
+      givenStored({
+        wallet_identified: JSON.stringify(['0x123:io.metamask::', '0x456:io.metamask:user-a:']),
       });
 
       const loadedSession = new FormoAnalyticsSession();
@@ -458,12 +438,7 @@ describe('FormoAnalyticsSession', () => {
     });
 
     it('still matches keys written before the user id joined them', () => {
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_identified') {
-          return JSON.stringify(['0x123:io.metamask']);
-        }
-        return null;
-      });
+      givenStored({ wallet_identified: JSON.stringify(['0x123:io.metamask']) });
 
       const loadedSession = new FormoAnalyticsSession();
 
@@ -473,10 +448,7 @@ describe('FormoAnalyticsSession', () => {
 
     it('keeps only the newest 20 entries of an oversized set', () => {
       const many = Array.from({ length: 25 }, (_, i) => `wallet.${i}`);
-      mockStorage.get.mockImplementation((key: string) => {
-        if (key === 'wallet_detected') return JSON.stringify(many);
-        return null;
-      });
+      givenStored({ wallet_detected: JSON.stringify(many) });
 
       const loadedSession = new FormoAnalyticsSession();
 

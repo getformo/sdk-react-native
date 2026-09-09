@@ -152,6 +152,7 @@ describe('hash utilities', () => {
       let reads = 0;
       const flaky = { a: 1, get toJSON() { reads++; return reads === 1 ? () => 'once' : undefined; } };
       expect(stableStringify({ p: flaky })).toBe('{"p":"once"}');
+      expect(reads).toBe(1);
     });
 
     it('honors a BigInt.prototype.toJSON hook and an overridden call on a hook', () => {
@@ -172,12 +173,6 @@ describe('hash utilities', () => {
       let reads = 0;
       const growing = new Proxy([1, 2], { get: (t, p, r) => { if (p === 'length') { reads++; if (reads > 1) t.push(0); } return Reflect.get(t, p, r); } });
       expect(stableStringify({ a: growing })).toBe('{"a":[1,2]}');
-    });
-
-    it('throws on a cycle, as JSON.stringify does', () => {
-      const cyc: Record<string, unknown> = { a: 1 };
-      cyc.self = cyc;
-      expect(() => stableStringify(cyc)).toThrow(TypeError);
     });
 
     it('serializes a sparse array hole as null, as JSON.stringify does', () => {

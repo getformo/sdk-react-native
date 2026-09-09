@@ -705,7 +705,7 @@ export class FormoAnalytics implements IFormoAnalytics {
       // a marker written on an excluded chain would silence a later
       // identify on an allowed one.
       if (!this.shouldTrack()) {
-        logger.info("identify() skipped: tracking is suppressed for this wallet or chain");
+        logger.info("identify() skipped: tracking is suppressed for this visitor or chain");
         return;
       }
 
@@ -730,23 +730,16 @@ export class FormoAnalytics implements IFormoAnalytics {
         storage().set(SESSION_USER_ID_KEY, userId);
       }
 
-      // Check for duplicate identify
-      // The effective user, as the wire event carries it, not only the argument.
-      const effectiveUserId = this.currentUserId;
-      const isAlreadyIdentified = validAddress
-        ? this.session.isWalletIdentified(validAddress, rdns || "", effectiveUserId, properties)
-        : false;
-
-      if (isAlreadyIdentified) {
-        logger.info(
-          `Identify: Wallet ${providerName || "Unknown"} with address ${validAddress} already identified`
-        );
-        return;
-      }
-
-      // Mark as identified
+      // Dedup on the effective user, as the wire event carries it, not only
+      // the argument: a re-identify that changes the user is sent again.
       if (validAddress) {
-        this.session.markWalletIdentified(validAddress, rdns || "", effectiveUserId, properties);
+        if (this.session.isWalletIdentified(validAddress, rdns || "", this.currentUserId, properties)) {
+          logger.info(
+            `Identify: Wallet ${providerName || "Unknown"} with address ${validAddress} already identified`
+          );
+          return;
+        }
+        this.session.markWalletIdentified(validAddress, rdns || "", this.currentUserId, properties);
       }
 
       await this.trackEvent(
@@ -773,7 +766,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     // The full policy, not consent alone: a detect refused by the chain gate
     // after the marker is written would silence the wallet for the session.
     if (!this.shouldTrack()) {
-      logger.info("detect() skipped: tracking is suppressed for this wallet or chain");
+      logger.info("detect() skipped: tracking is suppressed for this visitor or chain");
       return;
     }
     if (this.session.isWalletDetected(rdns)) {

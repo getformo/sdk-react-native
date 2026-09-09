@@ -27,6 +27,8 @@ type MarkerSet = {
   atKey: string;
   entries: Set<string>;
   at: number;
+  /** Rewrites an entry written by an earlier version, on load. */
+  migrate?: (entry: string) => string;
 };
 
 /**
@@ -69,6 +71,8 @@ export class FormoAnalyticsSession {
     atKey: SESSION_WALLET_IDENTIFIED_AT_KEY,
     entries: new Set(),
     at: 0,
+    // An identified key written before user id and properties joined it.
+    migrate: (entry) => (entry.split(":").length === 2 ? `${entry}::` : entry),
   };
 
   constructor() {
@@ -80,9 +84,7 @@ export class FormoAnalyticsSession {
    */
   private loadFromStorage(): void {
     try {
-      // A version that shared one expiry between both sets: its timestamp
-      // seeds each set that has none, so markers already past their day
-      // still expire now rather than a day from now.
+      // A version that shared one expiry between both sets.
       const legacyAtRaw = storage().get(LEGACY_WALLET_MARKED_AT_KEY);
       const legacyAt = legacyAtRaw ? parseInt(legacyAtRaw, 10) : 0;
       if (legacyAtRaw) storage().remove(LEGACY_WALLET_MARKED_AT_KEY);
@@ -97,9 +99,8 @@ export class FormoAnalyticsSession {
     const raw = storage().get(set.key);
     if (!raw) return;
     const parsed = JSON.parse(raw) as string[];
-    set.entries = new Set(
-      parsed.slice(-MAX_MARKER_ENTRIES).map((entry) => this.migrateEntry(set, entry))
-    );
+    const kept = parsed.slice(-MAX_MARKER_ENTRIES);
+    set.entries = new Set(set.migrate ? kept.map(set.migrate) : kept);
     if (set.entries.size === 0) return;
     // A truncated or migrated set is written back, or every cold start
     // would load the legacy value again.
@@ -112,33 +113,17 @@ export class FormoAnalyticsSession {
       // Markers written by a version without a per-set timestamp keep the
       // shared one if there was one, else get their day from now; either
       // way they expire.
-      set.at = Number.isFinite(legacyAt) && legacyAt > 0 ? Math.min(legacyAt, Date.now()) : Date.now();
+      set.at = legacyAt > 0 ? Math.min(legacyAt, Date.now()) : Date.now();
       storage().set(set.atKey, String(set.at));
     }
     this.expireIfStale(set);
   }
 
-  /** An identified key written before user id and properties joined it. */
-  private migrateEntry(set: MarkerSet, entry: string): string {
-    if (set !== this.identified) return entry;
-    return entry.split(":").length === 2 ? `${entry}::` : entry;
-  }
-
-  /**
-   * The stored timestamp, or 0 when it is missing or unusable. A future
-   * timestamp is clamped to now: a clock set forward and then corrected
-   * must not keep a marker alive past its day.
-   */
+  /** The stored timestamp, or 0 when it is missing or unusable. */
   private readTimestamp(set: MarkerSet): number {
     const raw = storage().get(set.atKey);
     const parsed = raw ? parseInt(raw, 10) : 0;
-    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-    const now = Date.now();
-    if (parsed > now) {
-      storage().set(set.atKey, String(now));
-      return now;
-    }
-    return parsed;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
   private saveSet(set: MarkerSet): void {
@@ -152,7 +137,22 @@ export class FormoAnalyticsSession {
     }
   }
 
-  private addEntry(set: MarkerSet, entry: string): void {
+  private hasEntry(set: MarkerSet, entry: string): boolean {
+    this.expireIfStale(set);
+    return set.entries.has(entry);
+  }
+
+  /**
+   * Add an entry unless it is already there. With `supersede`, the entries
+   * that start with it go first: the new entry replaces their state.
+   */
+  private markEntry(set: MarkerSet, entry: string, supersede?: string): void {
+    if (this.hasEntry(set, entry)) return;
+    if (supersede !== undefined) {
+      for (const old of set.entries) {
+        if (old.startsWith(supersede)) set.entries.delete(old);
+      }
+    }
     set.entries.add(entry);
     for (const oldest of set.entries) {
       if (set.entries.size <= MAX_MARKER_ENTRIES) break;
@@ -161,7 +161,11 @@ export class FormoAnalyticsSession {
     this.saveSet(set);
   }
 
-  /** Drop the set once a day has passed since its last write. */
+  /**
+   * Drop the set once a day has passed since its last write. A future
+   * timestamp is clamped to now: a clock set forward and then corrected
+   * must not keep a marker alive past its day.
+   */
   private expireIfStale(set: MarkerSet): void {
     if (!set.at) return;
     const now = Date.now();
@@ -186,17 +190,14 @@ export class FormoAnalyticsSession {
    * Check if a wallet has been detected in this session
    */
   public isWalletDetected(rdns: string): boolean {
-    this.expireIfStale(this.detected);
-    return this.detected.entries.has(rdns);
+    return this.hasEntry(this.detected, rdns);
   }
 
   /**
    * Mark a wallet as detected
    */
   public markWalletDetected(rdns: string): void {
-    this.expireIfStale(this.detected);
-    if (this.detected.entries.has(rdns)) return;
-    this.addEntry(this.detected, rdns);
+    this.markEntry(this.detected, rdns);
   }
 
   /**
@@ -229,9 +230,8 @@ export class FormoAnalyticsSession {
     userId?: string,
     properties?: IFormoEventProperties
   ): boolean {
-    this.expireIfStale(this.identified);
     const { key } = this.buildIdentificationKey(address, rdns, userId, properties);
-    return this.identified.entries.has(key);
+    return this.hasEntry(this.identified, key);
   }
 
   /**
@@ -243,22 +243,10 @@ export class FormoAnalyticsSession {
     userId?: string,
     properties?: IFormoEventProperties
   ): void {
-    this.expireIfStale(this.identified);
-    const { key, prefix } = this.buildIdentificationKey(
-      address,
-      rdns,
-      userId,
-      properties
-    );
-    if (this.identified.entries.has(key)) return;
+    const { key, prefix } = this.buildIdentificationKey(address, rdns, userId, properties);
     // Keep only the wallet-user's latest state. Otherwise a profile that
     // reverts to an earlier value would match the stale entry and send nothing.
-    for (const entry of this.identified.entries) {
-      if (entry.startsWith(`${prefix}:`)) {
-        this.identified.entries.delete(entry);
-      }
-    }
-    this.addEntry(this.identified, key);
+    this.markEntry(this.identified, key, `${prefix}:`);
   }
 
   /**
