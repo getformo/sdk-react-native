@@ -66,6 +66,33 @@ describe("EventQueue", () => {
     await queue.cleanup();
   });
 
+  it("retries the identical normalized payload and calls back once", async () => {
+    jest.useFakeTimers();
+    const queue = makeQueue();
+    try {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 503 });
+      const callback = jest.fn();
+      const event = {
+        ...makeEvent(1),
+        context: { measurement: -(2 ** 63) },
+        properties: { measurement: 2 ** 64, amount: 12.5 },
+      } as unknown as IFormoEvent;
+      await queue.enqueue(event, callback);
+      await jest.advanceTimersByTimeAsync(1001);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[1][1].body);
+      const [sent] = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(sent.context.measurement).toBe(String(-(2 ** 63)));
+      expect(sent.properties).toEqual({ measurement: String(2 ** 64), amount: 12.5 });
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback.mock.calls[0][0]).toBeUndefined();
+      expect(event.properties?.measurement).toBe(2 ** 64);
+    } finally {
+      await queue.cleanup();
+      jest.useRealTimers();
+    }
+  });
+
   describe("first event of the app session", () => {
     it("flushes immediately instead of waiting for flushAt", async () => {
       const queue = makeQueue({ flushAt: 20 });
