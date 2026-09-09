@@ -145,6 +145,15 @@ describe('hash utilities', () => {
       expect(stableStringify({ p: x })).toBe(JSON.stringify({ p: x }));
     });
 
+    it('honors a toJSON hook on a function value, and reads the hook once', () => {
+      const fn = Object.assign(() => undefined, { toJSON: () => 'fn' });
+      expect(stableStringify({ f: fn })).toBe(JSON.stringify({ f: fn }));
+      expect(stableStringify({ g: () => undefined })).toBe(JSON.stringify({ g: () => undefined }));
+      let reads = 0;
+      const flaky = { a: 1, get toJSON() { reads++; return reads === 1 ? () => 'once' : undefined; } };
+      expect(stableStringify({ p: flaky })).toBe('{"p":"once"}');
+    });
+
     it('throws on a cycle, as JSON.stringify does', () => {
       const cyc: Record<string, unknown> = { a: 1 };
       cyc.self = cyc;
