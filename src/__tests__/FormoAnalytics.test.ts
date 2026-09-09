@@ -543,6 +543,19 @@ describe('FormoAnalytics', () => {
       expect(mockEventManager.addEvent).not.toHaveBeenCalled();
     });
 
+    it('identify() without a user id carries the effective user on the wire, as the marker does', async () => {
+      analytics.currentUserId = 'restored-user';
+      mockEventManager.addEvent.mockClear();
+
+      await analytics.identify({ address: '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf', rdns: 'io.metamask' });
+
+      const event = mockEventManager.addEvent.mock.calls.at(-1)?.[0];
+      expect(event.userId).toBe('restored-user');
+      expect(mockSession.markWalletIdentified).toHaveBeenCalledWith(
+        '0x51377e9B985Bb90B7c091B9a7d30C93d4c9c1CEf', 'io.metamask', 'restored-user', undefined
+      );
+    });
+
     it('treats a null or undefined idempotency_key as no key and strips the property', async () => {
       for (const idempotency_key of [undefined, null]) {
         mockEventManager.addEvent.mockClear();

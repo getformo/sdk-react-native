@@ -744,7 +744,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
       await this.trackEvent(
         EventType.IDENTIFY,
-        { address: validAddress, providerName, userId, rdns },
+        { address: validAddress, providerName, userId: this.currentUserId, rdns },
         properties,
         context,
         callback
