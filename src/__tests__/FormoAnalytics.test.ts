@@ -29,6 +29,7 @@ const mockSession = {
   isWalletIdentified: jest.fn(),
   markWalletDetected: jest.fn(),
   markWalletIdentified: jest.fn(),
+  clearIdentified: jest.fn(),
   clear: jest.fn(),
 };
 
@@ -628,7 +629,7 @@ describe('FormoAnalytics', () => {
       const { reset } = analytics;
 
       expect(() => reset()).not.toThrow();
-      expect(mockSession.clear).toHaveBeenCalled();
+      expect(mockSession.clearIdentified).toHaveBeenCalled();
       expect(analytics.currentUserId).toBeUndefined();
     });
   });
@@ -762,11 +763,15 @@ describe('FormoAnalytics', () => {
       expect(analytics.currentChainId).toBeUndefined();
     });
 
-    it('should start a new session but keep the anonymous id', () => {
+    it('keeps the session, the detect markers and the anonymous id', () => {
       analytics.reset();
 
-      expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
+      // The same contract as the web SDK: a logout is not a new visit.
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('session_id');
+      expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('session_last_activity');
       expect(mockStorageInstance.remove).not.toHaveBeenCalledWith('anonymous_id');
+      expect(mockSession.clearIdentified).toHaveBeenCalled();
+      expect(mockSession.clear).not.toHaveBeenCalled();
     });
 
     it('should filter chain-scoped events after reset', async () => {
@@ -816,6 +821,14 @@ describe('FormoAnalytics', () => {
 
       expect(mockStorageInstance.remove).toHaveBeenCalledWith('anonymous_id');
       expect(mockStorageInstance.remove).toHaveBeenCalledWith('traffic_source');
+    });
+
+    it('starts a new session and forgets the wallet markers', () => {
+      analytics.optOutTracking();
+
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_id');
+      expect(mockStorageInstance.remove).toHaveBeenCalledWith('session_last_activity');
+      expect(mockSession.clear).toHaveBeenCalled();
     });
 
     it('reset() alone keeps the stored attribution', () => {

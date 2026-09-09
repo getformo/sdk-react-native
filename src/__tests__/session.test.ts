@@ -102,7 +102,118 @@ describe('FormoAnalyticsSession', () => {
 
     it('should remove from storage when clearing', () => {
       session.clear();
-      expect(mockStorage.remove).toHaveBeenCalledTimes(2);
+      expect(mockStorage.remove).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('expiry', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('renews the day on every write, so a later marker gets a full day', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      session.markWalletDetected('com.coinbase.wallet');
+
+      jest.setSystemTime(new Date('2026-09-10T22:00:00Z'));
+
+      expect(session.isWalletDetected('com.coinbase.wallet')).toBe(true);
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+    });
+
+    it('stamps the first write and keeps markers within the day', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_marked_at', String(Date.now()));
+
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+    });
+
+    it('forgets every marker a day after the first write, in memory', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      session.markWalletIdentified('0x123', 'io.metamask');
+
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+
+      expect(session.isWalletDetected('io.metamask')).toBe(false);
+      expect(session.isWalletIdentified('0x123', 'io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
+    });
+
+    it('drops stale markers found in storage on load', () => {
+      const stale = String(Date.now() - DAY - 1000);
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_marked_at') return stale;
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null;
+      });
+
+      const fresh = new FormoAnalyticsSession();
+
+      expect(fresh.isWalletDetected('io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_detected');
+    });
+
+    it('stamps markers written by a version without the timestamp, so they expire too', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null; // no wallet_marked_at: written before the expiry existed
+      });
+
+      const upgraded = new FormoAnalyticsSession();
+
+      expect(mockStorage.set).toHaveBeenCalledWith('wallet_marked_at', String(Date.now()));
+      expect(upgraded.isWalletDetected('io.metamask')).toBe(true);
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+      expect(upgraded.isWalletDetected('io.metamask')).toBe(false);
+    });
+
+    it('keeps markers found in storage that are still within the day', () => {
+      const recent = String(Date.now() - 1000);
+      mockStorage.get.mockImplementation((key: string) => {
+        if (key === 'wallet_marked_at') return recent;
+        if (key === 'wallet_detected') return JSON.stringify(['io.metamask']);
+        return null;
+      });
+
+      const fresh = new FormoAnalyticsSession();
+
+      expect(fresh.isWalletDetected('io.metamask')).toBe(true);
+    });
+  });
+
+  describe('clearIdentified()', () => {
+    it('forgets identified wallets but keeps detected ones', () => {
+      session.markWalletDetected('io.metamask');
+      session.markWalletIdentified('0x123', 'io.metamask');
+
+      session.clearIdentified();
+
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+      expect(session.isWalletIdentified('0x123', 'io.metamask')).toBe(false);
+      expect(mockStorage.remove).toHaveBeenCalledTimes(1);
+      expect(mockStorage.remove).not.toHaveBeenCalledWith('wallet_marked_at');
+    });
+
+    it('restarts the day when it removes the last marker', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletIdentified('0x123', 'io.metamask'); // identify without a detect
+
+      session.clearIdentified();
+      expect(mockStorage.remove).toHaveBeenCalledWith('wallet_marked_at');
+
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      jest.setSystemTime(new Date('2026-09-10T00:00:01Z'));
+      expect(session.isWalletDetected('io.metamask')).toBe(true); // a full day from its own write
+      jest.useRealTimers();
     });
   });
 

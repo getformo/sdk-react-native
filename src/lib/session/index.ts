@@ -1,6 +1,8 @@
 import {
   SESSION_WALLET_DETECTED_KEY,
   SESSION_WALLET_IDENTIFIED_KEY,
+  SESSION_WALLET_MARKED_AT_KEY,
+  WALLET_MARKER_TTL_MS,
 } from "../../constants";
 import { storage } from "../storage";
 import { logger } from "../logger";
@@ -8,13 +10,19 @@ import { logger } from "../logger";
 export { SESSION_WALLET_DETECTED_KEY, SESSION_WALLET_IDENTIFIED_KEY };
 
 /**
- * Session manager for tracking wallet detection and identification
- * Persists to session storage to avoid duplicate detection/identification events
- * within the same session
+ * Session manager for tracking wallet detection and identification.
+ * Persists to storage to avoid duplicate detection/identification events.
+ *
+ * Storage here is persistent, unlike a browser session cookie, so the
+ * markers carry their own expiry: a day from the last write, the lifetime
+ * of the web SDK's marker cookie. Without it a marker written on install
+ * would suppress detect for the life of the app.
  */
 export class FormoAnalyticsSession {
   private detectedWallets: Set<string> = new Set();
   private identifiedWallets: Set<string> = new Set();
+  /** When the markers were last written, 0 when there are none. */
+  private markedAt = 0;
 
   constructor() {
     this.loadFromStorage();
@@ -25,6 +33,13 @@ export class FormoAnalyticsSession {
    */
   private loadFromStorage(): void {
     try {
+      const markedAtRaw = storage().get(SESSION_WALLET_MARKED_AT_KEY);
+      const markedAt = markedAtRaw ? parseInt(markedAtRaw, 10) : 0;
+      if (markedAt && Date.now() - markedAt > WALLET_MARKER_TTL_MS) {
+        this.clear();
+        return;
+      }
+      this.markedAt = markedAt;
       const detected = storage().get(SESSION_WALLET_DETECTED_KEY);
       if (detected) {
         const parsed = JSON.parse(detected) as string[];
@@ -36,6 +51,12 @@ export class FormoAnalyticsSession {
         const parsed = JSON.parse(identified) as string[];
         this.identifiedWallets = new Set(parsed);
       }
+      // Markers written by a version without the timestamp get their day
+      // from now; otherwise they would never expire.
+      if (!this.markedAt && (this.detectedWallets.size || this.identifiedWallets.size)) {
+        this.markedAt = Date.now();
+        storage().set(SESSION_WALLET_MARKED_AT_KEY, String(this.markedAt));
+      }
     } catch (error) {
       logger.debug("Session: Failed to load from storage", error);
     }
@@ -46,6 +67,9 @@ export class FormoAnalyticsSession {
    */
   private saveToStorage(): void {
     try {
+      // Every write renews the day, as each write of the web cookie does.
+      this.markedAt = Date.now();
+      storage().set(SESSION_WALLET_MARKED_AT_KEY, String(this.markedAt));
       storage().set(
         SESSION_WALLET_DETECTED_KEY,
         JSON.stringify(Array.from(this.detectedWallets))
@@ -63,6 +87,7 @@ export class FormoAnalyticsSession {
    * Check if a wallet has been detected in this session
    */
   public isWalletDetected(rdns: string): boolean {
+    this.expireIfStale();
     return this.detectedWallets.has(rdns);
   }
 
@@ -78,8 +103,16 @@ export class FormoAnalyticsSession {
    * Check if a wallet + address combination has been identified
    */
   public isWalletIdentified(address: string, rdns: string): boolean {
+    this.expireIfStale();
     const key = `${address.toLowerCase()}:${rdns}`;
     return this.identifiedWallets.has(key);
+  }
+
+  /** Drop every marker once a day has passed since the last write. */
+  private expireIfStale(): void {
+    if (this.markedAt && Date.now() - this.markedAt > WALLET_MARKER_TTL_MS) {
+      this.clear();
+    }
   }
 
   /**
@@ -92,12 +125,28 @@ export class FormoAnalyticsSession {
   }
 
   /**
+   * Forget which wallets were identified, so a login after a logout
+   * identifies again. The detect markers stay: the wallets are still known.
+   */
+  public clearIdentified(): void {
+    this.identifiedWallets.clear();
+    storage().remove(SESSION_WALLET_IDENTIFIED_KEY);
+    // No marker left: the next one starts a fresh day.
+    if (this.detectedWallets.size === 0) {
+      this.markedAt = 0;
+      storage().remove(SESSION_WALLET_MARKED_AT_KEY);
+    }
+  }
+
+  /**
    * Clear all session data
    */
   public clear(): void {
     this.detectedWallets.clear();
     this.identifiedWallets.clear();
+    this.markedAt = 0;
     storage().remove(SESSION_WALLET_DETECTED_KEY);
     storage().remove(SESSION_WALLET_IDENTIFIED_KEY);
+    storage().remove(SESSION_WALLET_MARKED_AT_KEY);
   }
 }
