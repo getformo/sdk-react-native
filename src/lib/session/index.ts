@@ -192,7 +192,8 @@ export class FormoAnalyticsSession {
   /**
    * The dedup key names the wallet, the user id and the properties, so an
    * identify that changes any of them is sent again. The prefix names the
-   * wallet alone; marking replaces that wallet's earlier entries.
+   * wallet-user; marking replaces that wallet-user's earlier state, as on
+   * web, so dedup means "the same as this wallet-user's last identify".
    */
   private buildIdentificationKey(
     address: string,
@@ -200,8 +201,8 @@ export class FormoAnalyticsSession {
     userId?: string,
     properties?: IFormoEventProperties
   ): { key: string; prefix: string } {
-    const prefix = `${address.toLowerCase()}:${rdns}`;
-    const key = `${prefix}:${userId ?? ""}:${fingerprintProperties(properties)}`;
+    const prefix = `${address.toLowerCase()}:${rdns}:${userId ?? ""}`;
+    const key = `${prefix}:${fingerprintProperties(properties)}`;
     return { key, prefix };
   }
 
@@ -237,10 +238,10 @@ export class FormoAnalyticsSession {
       properties
     );
     if (this.identified.entries.has(key)) return;
-    // Keep only the wallet's latest state. Otherwise a profile that reverts
-    // to an earlier value would match the stale entry and send nothing.
+    // Keep only the wallet-user's latest state. Otherwise a profile that
+    // reverts to an earlier value would match the stale entry and send nothing.
     for (const entry of this.identified.entries) {
-      if (entry === prefix || entry.startsWith(`${prefix}:`)) {
+      if (entry.startsWith(`${prefix}:`)) {
         this.identified.entries.delete(entry);
       }
     }

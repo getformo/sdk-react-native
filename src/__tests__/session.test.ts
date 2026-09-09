@@ -129,13 +129,24 @@ describe('FormoAnalyticsSession', () => {
       expect(session.isWalletIdentified(address, rdns, undefined, {})).toBe(true);
     });
 
-    it('keeps only the latest state of a wallet', () => {
+    it('keeps one entry per wallet-user, as on web', () => {
       session.markWalletIdentified(address, rdns, 'user-a');
       session.markWalletIdentified(address, rdns, 'user-b');
 
+      // Both users stay identified on this wallet; a return to user-a is deduped.
       expect(session.isWalletIdentified(address, rdns, 'user-b')).toBe(true);
-      // The wallet's last identify carried user-b, so user-a is a change again.
-      expect(session.isWalletIdentified(address, rdns, 'user-a')).toBe(false);
+      expect(session.isWalletIdentified(address, rdns, 'user-a')).toBe(true);
+      const stored = JSON.parse(mockStorage.set.mock.calls.at(-1)![1]) as string[];
+      expect(stored).toHaveLength(2);
+    });
+
+    it('keeps only the latest profile of a wallet-user', () => {
+      session.markWalletIdentified(address, rdns, 'user-a', { plan: 'free' });
+      session.markWalletIdentified(address, rdns, 'user-a', { plan: 'pro' });
+
+      expect(session.isWalletIdentified(address, rdns, 'user-a', { plan: 'pro' })).toBe(true);
+      // The last identify carried plan pro, so a return to free is a change again.
+      expect(session.isWalletIdentified(address, rdns, 'user-a', { plan: 'free' })).toBe(false);
       const stored = JSON.parse(mockStorage.set.mock.calls.at(-1)![1]) as string[];
       expect(stored).toHaveLength(1);
     });
