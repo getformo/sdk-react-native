@@ -731,8 +731,10 @@ export class FormoAnalytics implements IFormoAnalytics {
       }
 
       // Check for duplicate identify
+      // The effective user, as the wire event carries it, not only the argument.
+      const effectiveUserId = this.currentUserId;
       const isAlreadyIdentified = validAddress
-        ? this.session.isWalletIdentified(validAddress, rdns || "", userId, properties)
+        ? this.session.isWalletIdentified(validAddress, rdns || "", effectiveUserId, properties)
         : false;
 
       if (isAlreadyIdentified) {
@@ -744,7 +746,7 @@ export class FormoAnalytics implements IFormoAnalytics {
 
       // Mark as identified
       if (validAddress) {
-        this.session.markWalletIdentified(validAddress, rdns || "", userId, properties);
+        this.session.markWalletIdentified(validAddress, rdns || "", effectiveUserId, properties);
       }
 
       await this.trackEvent(

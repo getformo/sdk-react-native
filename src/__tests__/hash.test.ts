@@ -125,6 +125,15 @@ describe('hash utilities', () => {
       expect(stableStringify(self)).toBe('{"a":1,"b":2}');
     });
 
+    it('passes the property key to toJSON and unboxes through the built-in methods', () => {
+      const keyed = { toJSON: (k: string) => k };
+      expect(stableStringify({ x: keyed })).toBe(JSON.stringify({ x: keyed }));
+      expect(stableStringify({ x: keyed })).not.toBe(stableStringify({ y: keyed }));
+      const boxed = new String('real') as String & { valueOf: () => string };
+      boxed.valueOf = () => 'override';
+      expect(stableStringify({ s: boxed })).toBe(JSON.stringify({ s: boxed }));
+    });
+
     it('throws on a cycle, as JSON.stringify does', () => {
       const cyc: Record<string, unknown> = { a: 1 };
       cyc.self = cyc;
