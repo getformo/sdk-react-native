@@ -118,6 +118,7 @@ describe('hash utilities', () => {
       proto.toJSON = function () { return this.toString(); };
       try {
         expect(() => stableStringify({ p: { toJSON: () => BigInt(1) } })).toThrow(TypeError);
+        expect(() => stableStringify({ p: { toJSON: () => Object(BigInt(1)) } })).toThrow(TypeError);
       } finally {
         delete proto.toJSON;
       }
