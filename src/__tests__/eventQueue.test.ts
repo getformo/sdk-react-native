@@ -53,6 +53,19 @@ describe("EventQueue", () => {
     (globalThis as { fetch?: unknown }).fetch = fetchMock;
   });
 
+  it("protects arbitrary nested numeric fields on the wire without changing input", async () => {
+    const queue = makeQueue();
+    const properties = { measurement: 262198996219020150000, nested: [-(2 ** 64)], volume: -12.25 };
+    await queue.enqueue({ ...makeEvent(1), properties });
+    await settle();
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body[0].properties).toEqual({
+      measurement: "262198996219020150000", nested: [String(-(2 ** 64))], volume: -12.25,
+    });
+    expect(properties.measurement).toBe(262198996219020150000);
+    await queue.cleanup();
+  });
+
   describe("first event of the app session", () => {
     it("flushes immediately instead of waiting for flushAt", async () => {
       const queue = makeQueue({ flushAt: 20 });

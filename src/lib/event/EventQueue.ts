@@ -11,6 +11,7 @@ import { hash, generateUUID } from "../../utils/hash";
 import { toDateHourMinute } from "../../utils/timestamp";
 import { logger } from "../logger";
 import { EnqueueOptions, IEventQueue } from "./types";
+import { stringifyAnalyticsJson } from "../../utils/stringifyAnalyticsJson";
 
 type QueueItem = {
   message: IFormoEventPayload;
@@ -355,7 +356,7 @@ export class EventQueue implements IEventQueue {
     const hasReachedFlushAt = this.queue.length >= this.flushAt;
     const hasReachedQueueSize =
       this.queue.reduce(
-        (acc, item) => acc + JSON.stringify(item).length,
+        (acc, item) => acc + stringifyAnalyticsJson(item).length,
         0
       ) >= this.maxQueueSize;
 
@@ -565,7 +566,7 @@ export class EventQueue implements IEventQueue {
       const response = await fetch(this.apiHost, {
         method: "POST",
         headers: EVENTS_API_REQUEST_HEADER(this.writeKey),
-        body: JSON.stringify(data),
+        body: stringifyAnalyticsJson(data),
       });
 
       if (!response.ok) {
