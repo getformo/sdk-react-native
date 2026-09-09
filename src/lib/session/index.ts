@@ -205,8 +205,10 @@ export class FormoAnalyticsSession {
     userId?: string,
     properties?: IFormoEventProperties
   ): { key: string; prefix: string } {
-    // The user id is encoded so a ":" inside it cannot read as a delimiter.
-    const prefix = `${address.toLowerCase()}:${rdns}:${userId === undefined ? "" : encodeURIComponent(userId)}`;
+    // The user id is escaped so a ":" inside it cannot read as a delimiter.
+    // A plain replace, total over every string, unlike encodeURIComponent.
+    const safeUser = userId === undefined ? "" : userId.replace(/%/g, "%25").replace(/:/g, "%3A");
+    const prefix = `${address.toLowerCase()}:${rdns}:${safeUser}`;
     const key = `${prefix}:${fingerprintProperties(properties)}`;
     return { key, prefix };
   }

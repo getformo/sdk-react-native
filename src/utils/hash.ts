@@ -16,58 +16,43 @@ export function hash(input: string): string {
 }
 
 /**
- * Serialize a value so equal values give the same string whatever the key
- * insertion order. Object keys are sorted recursively; arrays keep their
- * order. Values follow JSON.stringify: undefined, functions and symbols are
- * omitted from objects and become null in arrays, non-finite numbers become
- * null, and toJSON() is honored. Returns undefined when JSON would omit the
- * value, and throws where JSON.stringify throws (BigInt, cycles), so a
- * payload that cannot go on the wire fails at the same point as before.
+ * JSON with object keys in sorted order at every depth, so two property
+ * bags built in a different order serialize the same. Otherwise it follows
+ * JSON.stringify: toJSON() is honored, boxed primitives unbox, arrays keep
+ * their order and holes become null, undefined values are omitted, and a
+ * cycle throws. Returns undefined where JSON.stringify would.
  */
-export function stableStringify(
-  value: unknown,
-  seen: Set<unknown> = new Set()
-): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "function") return undefined;
-  if (typeof value === "symbol") return undefined;
-  if (value === null) return "null";
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? JSON.stringify(value) : "null";
-  }
-  if (typeof value !== "object") return JSON.stringify(value);
+export function stableStringify(value: unknown): string | undefined {
+  const out = canonical(value, new Set());
+  return out === undefined ? undefined : JSON.stringify(out);
+}
 
-  // toJSON() first, as JSON.stringify does; the cycle check applies to what
-  // it returns, since that is what goes on the wire.
-  const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
-  if (typeof maybeToJSON === "function") {
-    return stableStringify((maybeToJSON as () => unknown).call(value), seen);
+/** A sorted, cycle-checked clone that JSON.stringify serializes as-is. */
+function canonical(value: unknown, stack: Set<unknown>): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const withToJSON = value as { toJSON?: unknown };
+  if (typeof withToJSON.toJSON === "function") {
+    const out = (withToJSON.toJSON as () => unknown).call(value);
+    // A toJSON() that returns its own object serializes by its fields.
+    if (out !== value) return canonical(out, stack);
   }
-  if (seen.has(value)) {
-    throw new TypeError("Converting circular structure to JSON");
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+    return value.valueOf();
   }
-  seen.add(value);
+  if (stack.has(value)) throw new TypeError("Converting circular structure to JSON");
+  stack.add(value);
   try {
     if (Array.isArray(value)) {
-      // By index, so a hole serializes as null the way JSON.stringify does.
-      const items: string[] = [];
-      for (let i = 0; i < value.length; i++) {
-        items.push(stableStringify(value[i], seen) ?? "null");
-      }
-      return `[${items.join(",")}]`;
+      const items: unknown[] = [];
+      for (let i = 0; i < value.length; i++) items.push(canonical(value[i], stack));
+      return items;
     }
     const record = value as Record<string, unknown>;
-    const parts: string[] = [];
-    for (const key of Object.keys(record).sort()) {
-      const encoded = stableStringify(record[key], seen);
-      if (encoded === undefined) continue;
-      parts.push(`${JSON.stringify(key)}:${encoded}`);
-    }
-    return `{${parts.join(",")}}`;
+    const sorted: Record<string, unknown> = Object.create(null);
+    for (const key of Object.keys(record).sort()) sorted[key] = canonical(record[key], stack);
+    return sorted;
   } finally {
-    // Only cycles are guarded. The same object used twice as siblings must
-    // serialize the same both times.
-    seen.delete(value);
+    stack.delete(value);
   }
 }
 

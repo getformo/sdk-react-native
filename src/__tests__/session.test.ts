@@ -140,6 +140,11 @@ describe('FormoAnalyticsSession', () => {
       expect(stored).toHaveLength(2);
     });
 
+    it('accepts a user id with a lone surrogate without throwing', () => {
+      expect(() => session.markWalletIdentified(address, rdns, 'bad\ud800id')).not.toThrow();
+      expect(session.isWalletIdentified(address, rdns, 'bad\ud800id')).toBe(true);
+    });
+
     it('does not let a ":" in one user id match another wallet-user', () => {
       session.markWalletIdentified(address, rdns, 'a:b');
       session.markWalletIdentified(address, rdns, 'a');

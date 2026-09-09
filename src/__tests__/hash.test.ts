@@ -113,6 +113,24 @@ describe('hash utilities', () => {
   });
 
   describe('stableStringify()', () => {
+    it('unboxes primitive wrappers, as JSON.stringify does', () => {
+      const a = { amount: new Number(1), ok: new Boolean(true), s: new String('x') };
+      expect(stableStringify(a)).toBe(JSON.stringify(a));
+      expect(stableStringify({ amount: new Number(1) })).not.toBe(stableStringify({ amount: new Number(2) }));
+    });
+
+    it('serializes a self-returning toJSON by its fields, as JSON.stringify does', () => {
+      const self: Record<string, unknown> = { b: 2, a: 1 };
+      self.toJSON = function () { return this; };
+      expect(stableStringify(self)).toBe('{"a":1,"b":2}');
+    });
+
+    it('throws on a cycle, as JSON.stringify does', () => {
+      const cyc: Record<string, unknown> = { a: 1 };
+      cyc.self = cyc;
+      expect(() => stableStringify(cyc)).toThrow(TypeError);
+    });
+
     it('serializes a sparse array hole as null, as JSON.stringify does', () => {
       const sparse: unknown[] = [];
       sparse[2] = 1;
