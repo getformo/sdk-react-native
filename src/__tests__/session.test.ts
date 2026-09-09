@@ -113,6 +113,18 @@ describe('FormoAnalyticsSession', () => {
       jest.useRealTimers();
     });
 
+    it('renews the day on every write, so a later marker gets a full day', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
+      session.markWalletDetected('io.metamask');
+      jest.setSystemTime(new Date('2026-09-09T23:00:00Z'));
+      session.markWalletDetected('com.coinbase.wallet');
+
+      jest.setSystemTime(new Date('2026-09-10T22:00:00Z'));
+
+      expect(session.isWalletDetected('com.coinbase.wallet')).toBe(true);
+      expect(session.isWalletDetected('io.metamask')).toBe(true);
+    });
+
     it('stamps the first write and keeps markers within the day', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-09-09T00:00:00Z'));
       session.markWalletDetected('io.metamask');
