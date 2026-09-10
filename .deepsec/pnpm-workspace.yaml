@@ -4,14 +4,15 @@ packages: []
 # packageManager) reads the identical copy in package.json#pnpm.overrides.
 # KEEP THE TWO IN SYNC.
 overrides:
-  fast-uri: '>=3.1.4 <4'
-  hono: '>=4.12.27 <5'
+  fast-uri: '>=3.1.6 <4'
+  hono: '>=4.13.5 <5'
+  ip-address: '>=10.3.1 <11'
   '@hono/node-server': '>=2.0.5 <3'
   undici: '>=7.28.0 <8'
   tar: '>=7.5.21 <8'
-  qs: '>=6.15.2 <7'
+  qs: '>=6.16.0 <7'
   body-parser: '>=2.3.0 <3'
-  'brace-expansion@>=3': '>=5.0.8 <6'
+  'brace-expansion@>=3': '>=5.0.9 <6'
   # @vercel/sandbox pins zod exactly 3.24.4 (in Aikido's vulnerable <4.4.0
   # range); forced major is accepted for this scanner-only workspace.
   zod: '>=4.4.0 <5'
