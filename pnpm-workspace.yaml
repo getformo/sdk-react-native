@@ -99,8 +99,5 @@ overrides:
 # Revisit as upstream (react-native / metro / viem) updates these transitive deps.
 auditConfig:
   ignoreGhsas:
-    - GHSA-4x5r-pxfx-6jf8
-    - GHSA-96hv-2xvq-fx4p
-    - GHSA-h67p-54hq-rp68
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
