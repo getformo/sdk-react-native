@@ -61,7 +61,8 @@ overrides:
   'postcss': '>=8.5.10'
   'semver@5': '>=7.7.4'
   'semver@6': '>=7.7.4'
-  'shell-quote': '>=1.8.4'
+  # >=1.11.0: GHSA-pqg4-j6r4-53mv (quote() command injection, critical).
+  'shell-quote': '>=1.11.0 <2'
   'tar': '>=7.5.13'
   'tmp': '>=0.2.6'
   'undici': '>=6.24.1 <7'
@@ -78,7 +79,8 @@ overrides:
   # examples repo). Global on purpose: a scoped abitype>zod override would
   # leave the flagged zod 3.25.76 resolution in place under @expo/cli.
   # expo CLI smoke-tested on zod 4 (see PR).
-  'zod': '>=4.4.0 <5'
+  # >=4.6.6: GHSA-mrhx-c7xc-m3w5 (memory exhaustion on oversized input).
+  'zod': '>=4.6.6 <5'
 
 # Audit policy: ignore advisories that only affect react-native's / wagmi's BUILD
 # tooling (never shipped in the SDK's runtime) and that cannot be cleanly patched.
