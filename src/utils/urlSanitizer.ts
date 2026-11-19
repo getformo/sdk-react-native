@@ -57,6 +57,8 @@ export function redactQueryString(query: string, excluded: Set<string>): string 
   return kept.length === pairs.length ? query : kept.join("&");
 }
 
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
 /**
  * Remove the excluded query parameters from a URL.
  *
@@ -73,7 +75,16 @@ export function redactUrl(url: string, excluded: Set<string>): string {
   const base = hashAt === -1 ? url : url.slice(0, hashAt);
   const hash = hashAt === -1 ? "" : url.slice(hashAt);
   const queryAt = base.indexOf("?");
-  if (queryAt === -1) return url;
+  if (queryAt === -1) {
+    // No "?" and no scheme, but name=value pairs: a bare query string. The
+    // saved referrer has this shape when it came from the Play install
+    // referrer ("utm_source=google&utm_medium=cpc"), and one saved by an
+    // earlier SDK version was never filtered.
+    if (!URL_SCHEME.test(base) && base.includes("=")) {
+      return redactQueryString(base, excluded) + hash;
+    }
+    return url;
+  }
 
   const query = base.slice(queryAt + 1);
   const redacted = redactQueryString(query, excluded);

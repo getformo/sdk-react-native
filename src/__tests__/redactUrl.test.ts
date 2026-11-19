@@ -42,6 +42,8 @@ describe("redactUrl", () => {
     ["https://a.io/p?TOKEN=1&Token=2&x=3", "https://a.io/p?x=3"],
     ["https://a.io/p?token&x=3", "https://a.io/p?x=3"],
     ["https://a.io/p?my%20key=1&my+key=2&x=3", "https://a.io/p?x=3"],
+    // A bare query string: the shape of a saved Play install referrer.
+    ["utm_source=google&token=1", "utm_source=google"],
   ])("%s -> %s", (input, expected) => {
     expect(redactUrl(input, excluded)).toBe(expected);
   });
@@ -54,6 +56,9 @@ describe("redactUrl", () => {
     // The fragment is left untouched, as in the web SDK.
     "myapp://join#token=1",
     "myapp://join?a=%E0%A4%A",
+    // A scheme and no "?": not a query string, even with "=" in it.
+    "myapp:token=1",
+    "utm_source=google&utm_medium=cpc",
     "",
   ])("returns %s unchanged", (input) => {
     expect(redactUrl(input, excluded)).toBe(input);
