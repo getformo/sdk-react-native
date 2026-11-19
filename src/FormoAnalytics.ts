@@ -41,7 +41,7 @@ import {
   TransactionStatus,
 } from "./types";
 import { validateAddress } from "./utils";
-import { applyUrlSanitizer } from "./utils/urlSanitizer";
+import { createUrlCleaner, UrlCleaner } from "./utils/urlSanitizer";
 import {
   clearTrafficSource,
   getStoredTrafficSource,
@@ -71,6 +71,7 @@ export class FormoAnalytics implements IFormoAnalytics {
   private walletGeneration = 0;
   private chainGeneration = 0;
   private consentGeneration = 0;
+  private urlCleaner: UrlCleaner;
 
   config: Config;
   currentChainId?: ChainID;
@@ -82,6 +83,7 @@ export class FormoAnalytics implements IFormoAnalytics {
     public options: Options = {}
   ) {
     this.config = { writeKey };
+    this.urlCleaner = createUrlCleaner(options);
 
     this.session = new FormoAnalyticsSession();
     this.currentUserId =
@@ -208,7 +210,7 @@ export class FormoAnalytics implements IFormoAnalytics {
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
-          sanitizeUrl: (url) => analytics.sanitizeUrl(url),
+          sanitizeUrl: (query) => analytics.urlCleaner.queryString(query),
           canCapture: () =>
             analytics.consentGeneration === consentGeneration &&
             !analytics.hasOptedOutTracking(),
@@ -427,13 +429,12 @@ export class FormoAnalytics implements IFormoAnalytics {
   }
 
   /**
-   * Apply the app's `sanitizeUrl` hook to the referrer already in storage and
-   * write the result back. Without this, a referrer saved before the app
-   * configured the hook would stay on the device, and would be reported again
-   * if the hook were later removed.
+   * Clean the referrer already in storage (the app's `sanitizeUrl` hook, then
+   * the excluded query parameters) and write the result back. Without this, a
+   * referrer saved by an SDK version that had no filter, or under a looser
+   * configuration, would stay on the device.
    */
   private sanitizeStoredReferrer(): void {
-    if (typeof this.options.sanitizeUrl !== "function") return;
     try {
       const stored = getStoredTrafficSource();
       if (!stored?.referrer) return;
@@ -451,9 +452,13 @@ export class FormoAnalytics implements IFormoAnalytics {
     }
   }
 
-  /** Run the app's `sanitizeUrl` hook, if any. Returns "" for a dropped URL. */
+  /**
+   * Clean a URL before the SDK stores or reports it: run the app's
+   * `sanitizeUrl` hook, then strip the excluded query parameters. Returns ""
+   * for a URL the hook dropped.
+   */
   private sanitizeUrl(url: string): string {
-    return applyUrlSanitizer(this.options.sanitizeUrl, url);
+    return this.urlCleaner.url(url);
   }
 
   /**

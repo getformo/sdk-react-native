@@ -112,12 +112,19 @@ describe("sanitizeUrl on the wire", () => {
     expect(everything(asyncStorage)).not.toContain("SECRET");
   });
 
-  it("without the option, the callback is reported as before", async () => {
-    await start();
+  it("without any option, the built-in denylist still strips the OAuth values", async () => {
+    const asyncStorage = makeStorage();
+    const analytics = await start({}, asyncStorage);
     sent.length = 0;
     await openLink(CALLBACK);
+    await analytics.track("later");
+    await analytics.flush();
 
-    expect(find("Deep Link Opened")!.properties.url).toBe(CALLBACK);
+    // The link itself is still reported (only a sanitizeUrl hook can drop a
+    // link); its secrets are not.
+    expect(find("Deep Link Opened")!.properties.url).toBe("myapp-redirect://");
+    expect(find("later")!.context.referrer).toBe("myapp-redirect://");
+    expect(everything(asyncStorage)).not.toContain("SECRET");
   });
 
   it("counts a cold launch through the callback, with the URL omitted", async () => {
@@ -158,13 +165,12 @@ describe("sanitizeUrl on the wire", () => {
 
   it("filters a referrer that an earlier SDK version saved", async () => {
     const asyncStorage = makeStorage();
-    // "Earlier version": no hook, so the callback is saved as the referrer.
-    const before = await start({}, asyncStorage);
-    await openLink(CAMPAIGN);
-    await openLink(CALLBACK);
-    await before.cleanup();
-    instances = [];
-    expect(JSON.stringify([...asyncStorage.data.entries()])).toContain("SECRETCODE");
+    // What 1.3.3 left on the device: the raw callback saved as the referrer
+    // next to the campaign's utm_source.
+    asyncStorage.data.set(
+      "formo_rn_wk_sanitize_traffic_source",
+      JSON.stringify({ utm_source: "twitter", referrer: CALLBACK }),
+    );
 
     // Upgrade: same storage, hook configured.
     const after = await start({ sanitizeUrl: dropCallbacks }, asyncStorage);
@@ -231,6 +237,75 @@ describe("sanitizeUrl on the wire", () => {
 
     expect(find("link_seen")!.properties).toEqual({ kept: "yes" });
     expect(find("link_seen_2")!.properties.url).toBe(CAMPAIGN);
+  });
+
+  it("an upgrade with no hook strips the saved referrer in storage", async () => {
+    const asyncStorage = makeStorage();
+    asyncStorage.data.set(
+      "formo_rn_wk_sanitize_traffic_source",
+      JSON.stringify({ utm_source: "twitter", referrer: CALLBACK }),
+    );
+
+    const analytics = await start({}, asyncStorage);
+    sent.length = 0;
+    await analytics.track("after_upgrade");
+    await analytics.flush();
+
+    expect(find("after_upgrade")!.context).toMatchObject({
+      utm_source: "twitter",
+      referrer: "myapp-redirect://",
+    });
+    expect(everything(asyncStorage)).not.toContain("SECRET");
+  });
+
+  it("strips tracking.excludeQueryParams everywhere, case-insensitively", async () => {
+    const asyncStorage = makeStorage();
+    getInitialURL.mockResolvedValue(
+      "myapp://join?Token=SECRETTOKEN&utm_source=email&email=SECRET%40x.io#frag",
+    );
+
+    const analytics = await start(
+      { tracking: { excludeQueryParams: ["token", "EMAIL"] } },
+      asyncStorage,
+    );
+    await analytics.track("custom", { url: "https://x.io/p?a=1&token=SECRET2" });
+    await analytics.flush();
+
+    const clean = "myapp://join?utm_source=email#frag";
+    expect(find("Application Opened")!.properties.url).toBe(clean);
+    expect(find("Deep Link Opened")!.properties.url).toBe(clean);
+    expect(find("Application Installed")!.properties.referrer).toBe(clean);
+    expect(find("custom")!.properties.url).toBe("https://x.io/p?a=1");
+    expect(find("custom")!.context).toMatchObject({
+      utm_source: "email",
+      referrer: clean,
+    });
+    expect(everything(asyncStorage)).not.toContain("SECRET");
+  });
+
+  it("does not read attribution from an excluded parameter", async () => {
+    getInitialURL.mockResolvedValue("myapp://join?ref=SECRETREF&utm_source=email");
+
+    await start({ tracking: { excludeQueryParams: ["ref"] } });
+
+    const context = find("Application Opened")!.context;
+    expect(context.utm_source).toBe("email");
+    expect(context).not.toHaveProperty("ref");
+    expect(JSON.stringify(sent)).not.toContain("SECRET");
+  });
+
+  it("the denylist holds even when the hook returns the parameter", async () => {
+    const asyncStorage = makeStorage();
+    const analytics = await start(
+      { sanitizeUrl: () => "myapp://x?privy_oauth_code=SECRETCODE&keep=1" },
+      asyncStorage,
+    );
+    sent.length = 0;
+    await openLink("myapp://anything");
+    await analytics.flush();
+
+    expect(find("Deep Link Opened")!.properties.url).toBe("myapp://x?keep=1");
+    expect(everything(asyncStorage)).not.toContain("SECRET");
   });
 
   it("applies to the public setTrafficSourceFromUrl", async () => {

@@ -123,6 +123,24 @@ export interface Config {
  */
 export interface TrackingOptions {
   excludeChains?: ChainID[];
+  /**
+   * Additional query parameter names to strip from the URLs the SDK stores or
+   * reports, on top of a built-in always-on denylist (currently
+   * `privy_oauth_code`, `privy_oauth_state`, and `privy_oauth_provider`) that
+   * cannot be disabled. Matched case-insensitively.
+   *
+   * Excluded parameters are removed from deep links and the launch URL before
+   * the SDK reads attribution from them, saves the referrer, or reports them
+   * in `Deep Link Opened` and `Application Opened`; from the Android Play
+   * install referrer; and from the `url` property and `referrer` context
+   * field of each event. The URL fragment (after `#`) is left untouched.
+   *
+   * The same option as the web SDK. To drop a whole link, or for rules a list
+   * of names cannot express, use `sanitizeUrl`; it runs before this.
+   *
+   * @example ["token", "access_token", "email", "signature"]
+   */
+  excludeQueryParams?: string[];
 }
 
 /**
@@ -316,6 +334,10 @@ export interface Options {
    * removed. Return an empty string to drop it: the SDK then ignores the deep
    * link (no `Deep Link Opened` event, saved attribution unchanged), and
    * omits the value from the event.
+   *
+   * The hook receives the URL as it arrived. Parameters named in
+   * `tracking.excludeQueryParams`, and the built-in excluded parameters, are
+   * removed from its result.
    *
    * The hook must be synchronous. It can run more than once on the same URL,
    * so its result must be stable when it is applied again. If it throws or

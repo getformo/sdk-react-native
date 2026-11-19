@@ -176,6 +176,7 @@ interface Options {
   // Tracking control
   tracking?: boolean | {
     excludeChains?: number[];
+    excludeQueryParams?: string[]; // see "Filter URLs" below
   };
 
   // Logging
@@ -199,19 +200,46 @@ interface Options {
 
 The SDK reads deep links and the launch URL for attribution. It reports them
 in `Deep Link Opened` and `Application Opened`, and it saves the last link as
-the `referrer` of later events. Some links must not reach analytics, for
-example an OAuth callback that carries a `code` and a `state`.
+the `referrer` of later events. Some links carry values that must not reach
+analytics, for example an OAuth callback with a `code` and a `state`.
 
-Use `sanitizeUrl` to filter these URLs. Return the URL to use, or an empty
-string to drop it:
+There are two controls. They apply to deep links, the launch URL, the Android
+Play install referrer, the saved referrer, and the `url` property of each
+event.
+
+#### Remove query parameters: `tracking.excludeQueryParams`
+
+List the parameter names to remove. This is the same option as in the web SDK.
+
+```tsx
+options={{
+  tracking: {
+    excludeQueryParams: ['token', 'access_token', 'email', 'signature'],
+  },
+}}
+```
+
+Names match without regard to case. The URL fragment (after `#`) is not
+changed.
+
+These parameters are always removed, with or without configuration:
+
+- `privy_oauth_code`
+- `privy_oauth_state`
+- `privy_oauth_provider`
+
+#### Drop or rewrite a link: `sanitizeUrl`
+
+`excludeQueryParams` removes parameters, but the link is still reported. To
+ignore a link fully, or for a rule that a list of names cannot express, use
+`sanitizeUrl`. Return the URL to use, or an empty string to drop it:
 
 ```tsx
 options={{
   sanitizeUrl: (url) => {
-    // Drop sign-in callbacks.
+    // Ignore sign-in callbacks.
     if (url.includes('privy_oauth_code=')) return '';
-    // Or remove one parameter and keep the link.
-    return url.replace(/([?&])token=[^&]*&?/, '$1');
+    return url;
   },
 }}
 ```
@@ -224,11 +252,11 @@ When the result is an empty string:
 - The `url` property and the `referrer` context field are removed from the
   event.
 
-The SDK calls the function for each deep link, the launch URL, the `url`
-property of each event, and the saved referrer. The function must be
-synchronous. The SDK can call it more than once for the same URL, so the
-result must not change when the function is applied again. If the function
-throws or does not return a string, the SDK drops the URL.
+The function receives the URL as it arrived. The excluded parameters are then
+removed from its result. The function must be synchronous. The SDK can call it
+more than once for the same URL, so the result must not change when the
+function is applied again. If the function throws or does not return a string,
+the SDK drops the URL.
 
 On Android, the saved referrer can be the Play install referrer. This value is
 a query string (`utm_source=...&utm_medium=...`) and not a full URL.
