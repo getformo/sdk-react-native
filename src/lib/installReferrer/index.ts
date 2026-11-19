@@ -78,6 +78,12 @@ export interface CaptureOptions {
   customRefParams?: string[];
   pathPattern?: string;
   canCapture?: () => boolean;
+  /**
+   * The app's URL filter (Options.sanitizeUrl), already wrapped to fail
+   * closed. Called with the raw Play referrer query string before anything is
+   * parsed from it or saved. Returns "" to discard the referrer.
+   */
+  sanitizeUrl?: (url: string) => string;
 }
 
 /**
@@ -200,11 +206,22 @@ async function captureAndroidReferrer(
   if (!result.ok) return false; // errored — retry next launch
   if (options.canCapture && !options.canCapture()) return false;
 
-  const referrerQuery = result.info?.installReferrer;
-  if (!referrerQuery) {
+  const rawReferrerQuery = result.info?.installReferrer;
+  if (!rawReferrerQuery) {
     // Organic install (or untracked). API answered definitively — mark
     // resolved so we don't ask Play again on every launch.
     logger.debug("InstallReferrer: no Play referrer (organic install)");
+    return true;
+  }
+
+  // Filter BEFORE parsing, so a value the app removes can reach neither the
+  // utm_*/ref fields nor the saved referrer. A discarded referrer is still a
+  // definitive answer: mark resolved, the same as an organic install.
+  const referrerQuery = options.sanitizeUrl
+    ? options.sanitizeUrl(rawReferrerQuery)
+    : rawReferrerQuery;
+  if (!referrerQuery) {
+    logger.debug("InstallReferrer: referrer discarded by sanitizeUrl");
     return true;
   }
 

@@ -187,10 +187,51 @@ interface Options {
   // Custom API host
   apiHost?: string;
 
+  // Filter the URLs the SDK stores or reports (see "Filter URLs" below)
+  sanitizeUrl?: (url: string) => string;
+
   // Ready callback
   ready?: (formo: IFormoAnalytics) => void;
 }
 ```
+
+### Filter URLs
+
+The SDK reads deep links and the launch URL for attribution. It reports them
+in `Deep Link Opened` and `Application Opened`, and it saves the last link as
+the `referrer` of later events. Some links must not reach analytics, for
+example an OAuth callback that carries a `code` and a `state`.
+
+Use `sanitizeUrl` to filter these URLs. Return the URL to use, or an empty
+string to drop it:
+
+```tsx
+options={{
+  sanitizeUrl: (url) => {
+    // Drop sign-in callbacks.
+    if (url.includes('privy_oauth_code=')) return '';
+    // Or remove one parameter and keep the link.
+    return url.replace(/([?&])token=[^&]*&?/, '$1');
+  },
+}}
+```
+
+When the result is an empty string:
+
+- The SDK ignores the deep link. It sends no `Deep Link Opened` event and does
+  not change the saved attribution, so the campaign that came before stays.
+- `Application Opened` is sent without the `url` property.
+- The `url` property and the `referrer` context field are removed from the
+  event.
+
+The SDK calls the function for each deep link, the launch URL, the `url`
+property of each event, and the saved referrer. The function must be
+synchronous. The SDK can call it more than once for the same URL, so the
+result must not change when the function is applied again. If the function
+throws or does not return a string, the SDK drops the URL.
+
+On Android, the saved referrer can be the Play install referrer. This value is
+a query string (`utm_source=...&utm_medium=...`) and not a full URL.
 
 ### useFormo Hook Methods
 

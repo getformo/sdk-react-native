@@ -137,6 +137,10 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderProps> = ({
   const loggerOption = options?.logger;
   const app = options?.app;
   const hasReady = !!options?.ready;
+  // Presence only: the function itself is usually an inline arrow with a new
+  // identity on every render. But a filter that appears (or goes away) after
+  // mount must re-initialize, or the instance keeps running without it.
+  const hasSanitizeUrl = !!options?.sanitizeUrl;
   const wagmiConfig = options?.wagmi?.config;
   const wagmiQueryClient = options?.wagmi?.queryClient;
 
@@ -153,6 +157,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderProps> = ({
       logger: loggerOption,
       app,
       hasReady,
+      hasSanitizeUrl,
     };
 
     try {
@@ -161,7 +166,7 @@ const InitializedAnalytics: FC<FormoAnalyticsProviderProps> = ({
       logger.warn("Failed to serialize options, using timestamp", error);
       return Date.now().toString();
     }
-  }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, hasReady]);
+  }, [tracking, autocapture, apiHost, flushAt, flushInterval, retryCount, maxQueueSize, loggerOption, app, hasReady, hasSanitizeUrl]);
 
   useEffect(() => {
     // Increment initialization ID to track which initialization is current

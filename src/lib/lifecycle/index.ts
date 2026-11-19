@@ -84,9 +84,18 @@ export class AppLifecycleManager {
   private lastAppState: AppStateStatus = AppState.currentState;
   private appVersionInfo: AppVersionInfo = { version: "", build: "" };
   private trackForegrounded = false;
+  private sanitizeUrl: (url: string) => string;
 
-  constructor(analytics: IAnalyticsInstance) {
+  /**
+   * @param sanitizeUrl The app's URL filter (Options.sanitizeUrl), already
+   *   wrapped to fail closed. Returns "" for a URL that must not be reported.
+   */
+  constructor(
+    analytics: IAnalyticsInstance,
+    sanitizeUrl: (url: string) => string = (url) => url
+  ) {
     this.analytics = analytics;
+    this.sanitizeUrl = sanitizeUrl;
   }
 
   /**
@@ -107,8 +116,10 @@ export class AppLifecycleManager {
     let initialUrl: string | undefined;
     try {
       const url = await Linking.getInitialURL();
-      if (url) {
-        initialUrl = url;
+      // A dropped launch URL is omitted; the launch itself still counts.
+      const sanitized = url ? this.sanitizeUrl(url) : "";
+      if (sanitized) {
+        initialUrl = sanitized;
       }
     } catch {
       // Linking not available
@@ -157,7 +168,12 @@ export class AppLifecycleManager {
       // attribution (Android Play Install Referrer / deep link) so the install
       // event reports where the user came from, e.g. referrer=example.com.
       // Only non-empty fields are included to keep properties clean.
-      const trafficSource = getStoredTrafficSource() ?? {};
+      const trafficSource = { ...(getStoredTrafficSource() ?? {}) };
+      // The saved referrer is a URL. It can predate the app's sanitizeUrl
+      // hook (saved by an earlier SDK version), so filter it on the way out.
+      if (trafficSource.referrer) {
+        trafficSource.referrer = this.sanitizeUrl(trafficSource.referrer);
+      }
       const attribution = Object.fromEntries(
         Object.entries(trafficSource).filter(([, value]) => Boolean(value))
       );
