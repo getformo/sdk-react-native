@@ -300,6 +300,34 @@ export interface ReferralOptions {
 export interface Options {
   tracking?: boolean | TrackingOptions;
   /**
+   * Filter the URLs the SDK stores or reports. Use it to keep private values,
+   * such as an OAuth callback's `code` and `state`, out of analytics.
+   *
+   * The SDK calls it with:
+   * - each deep link and the launch URL, before it reads attribution from the
+   *   URL, saves it as the referrer, or reports it in `Deep Link Opened` and
+   *   `Application Opened`;
+   * - the `url` property of each event;
+   * - the saved referrer, before it is attached to an event. On Android this
+   *   value can be the Play install referrer, which is a query string
+   *   (`utm_source=...&utm_medium=...`) and not a full URL.
+   *
+   * Return the URL to use. You can return it unchanged or with parameters
+   * removed. Return an empty string to drop it: the SDK then ignores the deep
+   * link (no `Deep Link Opened` event, saved attribution unchanged), and
+   * omits the value from the event.
+   *
+   * The hook must be synchronous. It can run more than once on the same URL,
+   * so its result must be stable when it is applied again. If it throws or
+   * does not return a string, the SDK drops the URL.
+   *
+   * @example
+   * ```ts
+   * sanitizeUrl: (url) => (url.includes("privy_oauth_code=") ? "" : url)
+   * ```
+   */
+  sanitizeUrl?: (url: string) => string;
+  /**
    * Control wallet event autocapture
    * - `false`: Disable all wallet autocapture
    * - `true`: Enable all wallet events (default)

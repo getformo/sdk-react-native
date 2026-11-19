@@ -41,7 +41,14 @@ import {
   TransactionStatus,
 } from "./types";
 import { validateAddress } from "./utils";
-import { clearTrafficSource, parseTrafficSource, updateStoredTrafficSource } from "./utils/trafficSource";
+import { applyUrlSanitizer } from "./utils/urlSanitizer";
+import {
+  clearTrafficSource,
+  getStoredTrafficSource,
+  parseTrafficSource,
+  storeTrafficSource,
+  updateStoredTrafficSource,
+} from "./utils/trafficSource";
 import { captureInstallReferrer } from "./lib/installReferrer";
 import { Linking, EmitterSubscription } from "react-native";
 
@@ -164,6 +171,11 @@ export class FormoAnalytics implements IFormoAnalytics {
 
     const analytics = new FormoAnalytics(writeKey, options);
 
+    // Before anything reads it: a referrer saved without the app's filter
+    // (by an SDK version that had none) is rewritten in storage, not only
+    // filtered on each event.
+    analytics.sanitizeStoredReferrer();
+
     // Capture attribution BEFORE lifecycle tracking so the first
     // Application Installed/Opened events carry utm_*/ref/referrer.
     //
@@ -196,6 +208,7 @@ export class FormoAnalytics implements IFormoAnalytics {
         await captureInstallReferrer({
           customRefParams: analytics.options.referral?.queryParams,
           pathPattern: analytics.options.referral?.pathPattern,
+          sanitizeUrl: (url) => analytics.sanitizeUrl(url),
           canCapture: () =>
             analytics.consentGeneration === consentGeneration &&
             !analytics.hasOptedOutTracking(),
@@ -209,7 +222,9 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Wrapped in try-catch so a transient storage failure doesn't prevent SDK init
     if (analytics.isAutocaptureEnabled("lifecycle")) {
       try {
-        analytics.lifecycleManager = new AppLifecycleManager(analytics);
+        analytics.lifecycleManager = new AppLifecycleManager(analytics, (url) =>
+          analytics.sanitizeUrl(url)
+        );
         await analytics.lifecycleManager.start(options?.app, {
           trackForegrounded: analytics.isAutocaptureEnabled("foregrounded"),
         });
@@ -252,14 +267,16 @@ export class FormoAnalytics implements IFormoAnalytics {
   private async startDeepLinkCapture(): Promise<void> {
     const consentGeneration = this.consentGeneration;
     try {
-      const url = await Linking.getInitialURL();
+      const rawUrl = await Linking.getInitialURL();
+      // A URL the app's sanitizeUrl hook drops is treated as no link at all.
+      const url = rawUrl ? this.sanitizeUrl(rawUrl) : "";
       if (
         url &&
         this.consentGeneration === consentGeneration &&
         !this.hasOptedOutTracking()
       ) {
         if (this.isAttributionEnabled("deeplinks")) {
-          this.setTrafficSourceFromUrl(url);
+          this.applyTrafficSourceFromUrl(url);
         }
         // Held, not emitted: this runs before lifecycle tracking starts, and
         // the Segment spec orders `Deep Link Opened` after `Application
@@ -273,12 +290,16 @@ export class FormoAnalytics implements IFormoAnalytics {
     // Runtime deep links (foreground opens, universal links).
     this.linkingSubscription = Linking.addEventListener("url", (event) => {
       if (!event?.url || this.hasOptedOutTracking()) return;
+      // A URL the app's sanitizeUrl hook drops is ignored entirely: no
+      // attribution update and no event.
+      const url = this.sanitizeUrl(event.url);
+      if (!url) return;
       // Each behaviour checks its own flag: the hook may exist because only one
       // of them is enabled.
       if (this.isAttributionEnabled("deeplinks")) {
-        this.setTrafficSourceFromUrl(event.url);
+        this.applyTrafficSourceFromUrl(url);
       }
-      void this.trackDeepLinkOpened(event.url);
+      void this.trackDeepLinkOpened(url);
     });
   }
 
@@ -397,6 +418,52 @@ export class FormoAnalytics implements IFormoAnalytics {
    */
   public setTrafficSourceFromUrl(url: string): void {
     if (this.hasOptedOutTracking()) return;
+    // An empty result means the app dropped the link: leave the saved traffic
+    // source as it is, so a redirect-only link (an OAuth callback) cannot
+    // replace campaign attribution.
+    const sanitized = this.sanitizeUrl(url);
+    if (!sanitized) return;
+    this.applyTrafficSourceFromUrl(sanitized);
+  }
+
+  /**
+   * Apply the app's `sanitizeUrl` hook to the referrer already in storage and
+   * write the result back. Without this, a referrer saved before the app
+   * configured the hook would stay on the device, and would be reported again
+   * if the hook were later removed.
+   */
+  private sanitizeStoredReferrer(): void {
+    if (typeof this.options.sanitizeUrl !== "function") return;
+    try {
+      const stored = getStoredTrafficSource();
+      if (!stored?.referrer) return;
+      const referrer = this.sanitizeUrl(stored.referrer);
+      if (referrer === stored.referrer) return;
+      const next: typeof stored = { ...stored, referrer };
+      if (!referrer) delete next.referrer;
+      if (Object.values(next).some(Boolean)) {
+        storeTrafficSource(next);
+      } else {
+        clearTrafficSource();
+      }
+    } catch (error) {
+      logger.error("FormoAnalytics: Failed to sanitize the saved referrer", error);
+    }
+  }
+
+  /** Run the app's `sanitizeUrl` hook, if any. Returns "" for a dropped URL. */
+  private sanitizeUrl(url: string): string {
+    return applyUrlSanitizer(this.options.sanitizeUrl, url);
+  }
+
+  /**
+   * Parse and persist attribution from a URL that has ALREADY been through
+   * sanitizeUrl(). Split from the public method so the Linking hook can
+   * decide once whether a link is dropped, and then feed the same result to
+   * both attribution and `Deep Link Opened`. (The hook can still see a URL
+   * again later, at the event boundary; Options.sanitizeUrl documents that.)
+   */
+  private applyTrafficSourceFromUrl(url: string): void {
     const trafficSource = parseTrafficSource(
       url,
       this.options.referral?.queryParams,

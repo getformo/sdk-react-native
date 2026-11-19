@@ -115,3 +115,51 @@ describe("captureInstallReferrer — hung native call", () => {
     expect(mockStorageInstance.setAsync).not.toHaveBeenCalled();
   });
 });
+
+describe("captureInstallReferrer — sanitizeUrl", () => {
+  const stored = () =>
+    mockStorageInstance.set.mock.calls
+      .filter(([key]) => key === "traffic_source")
+      .map(([, value]) => JSON.parse(value as string));
+
+  const capture = async (
+    installReferrer: string,
+    sanitizeUrl: (url: string) => string
+  ) => {
+    mockGetInstallReferrerInfo.mockImplementation((cb) =>
+      cb({ installReferrer }, null)
+    );
+    await captureInstallReferrer({ sanitizeUrl });
+  };
+
+  beforeEach(() => {
+    (Platform as { OS: string }).OS = "android";
+    mockStorageInstance.get.mockReturnValue(null);
+    mockStorageInstance.set.mockClear();
+    mockStorageInstance.setAsync.mockClear();
+    mockStorageManager.hasPersistentStorage.mockReturnValue(true);
+    mockGetInstallReferrerInfo.mockReset();
+    (getStorageManager as jest.Mock).mockReturnValue(mockStorageManager);
+    (storage as jest.Mock).mockReturnValue(mockStorageInstance);
+  });
+
+  it("saves the filtered referrer, not the raw Play string", async () => {
+    await capture("utm_source=google&token=SECRET", (url) =>
+      url.replace(/&token=[^&]*/, "")
+    );
+
+    expect(stored()).toEqual([
+      { utm_source: "google", referrer: "utm_source=google" },
+    ]);
+  });
+
+  it("saves nothing when the hook discards the referrer, and does not retry", async () => {
+    await capture("utm_source=google&token=SECRET", () => "");
+
+    expect(stored()).toEqual([]);
+    expect(mockStorageInstance.setAsync).toHaveBeenCalledWith(
+      "install_referrer_resolved",
+      "true"
+    );
+  });
+});

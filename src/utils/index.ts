@@ -3,3 +3,4 @@ export * from "./hash";
 export * from "./timestamp";
 export * from "./helpers";
 export * from "./trafficSource";
+export * from "./urlSanitizer";

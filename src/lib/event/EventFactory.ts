@@ -51,6 +51,7 @@ import {
   toSnakeCase,
   mergeDeepRight,
   getStoredTrafficSource,
+  applyUrlSanitizer,
 } from "../../utils";
 import { getCurrentTimeFormatted } from "../../utils/timestamp";
 import { generateUUID } from "../../utils/hash";
@@ -179,6 +180,39 @@ export function resolveExpoDeviceType(
 ): "tablet" | "mobile" {
   if (deviceType == null || tabletEnumValue == null) return "mobile";
   return deviceType === tabletEnumValue ? "tablet" : "mobile";
+}
+
+/**
+ * Resolve `os_name` in the Expo path.
+ *
+ * On a native platform this is React Native's `Platform.OS`, the same value
+ * the react-native-device-info path reports. expo-device's `osName` is not
+ * usable there: on Android it returns `Build.VERSION.BASE_OS` when that is
+ * non-empty, which on many devices is a build fingerprint
+ * ("google/panther/panther:14/...") and not "Android". That string went out
+ * as `os_name`, and synthesizeUserAgent() matched neither OS and produced an
+ * empty user agent, so the device was classified as unknown.
+ *
+ * Off native (React Native Web) `Platform.OS` is only "web", so expo-device's
+ * value ("Mac OS", "Windows", ...) is kept: it is the real OS there.
+ */
+export function resolveExpoOsName(expoOsName: string | null | undefined): string {
+  if (Platform.OS === "android" || Platform.OS === "ios") return Platform.OS;
+  return expoOsName || Platform.OS;
+}
+
+/**
+ * The OS version from React Native alone, for when no device module supplies
+ * one. On Android `Platform.Version` is the API level (34), not the OS
+ * version (14); the version users know is `Platform.constants.Release`.
+ */
+export function platformOsVersion(): string {
+  if (Platform.OS === "android") {
+    const release = (Platform.constants as { Release?: unknown } | undefined)
+      ?.Release;
+    if (typeof release === "string" && release) return release;
+  }
+  return String(Platform.Version);
 }
 
 export function synthesizeUserAgent(info: {
@@ -405,8 +439,8 @@ class EventFactory implements IEventFactory {
     // Fall back to Expo modules (Expo Go)
     if (ExpoDevice || ExpoApplication) {
       try {
-        const os_name = ExpoDevice?.osName || Platform.OS;
-        const os_version = ExpoDevice?.osVersion || String(Platform.Version);
+        const os_name = resolveExpoOsName(ExpoDevice?.osName);
+        const os_version = ExpoDevice?.osVersion || platformOsVersion();
         const device_model = ExpoDevice?.modelName || "Unknown";
         const device_type = resolveExpoDeviceType(
           ExpoDevice?.deviceType,
@@ -440,7 +474,7 @@ class EventFactory implements IEventFactory {
     // Final fallback - minimal info from Platform
     logger.debug("No device info modules available, using Platform defaults");
     const os_name = Platform.OS;
-    const os_version = String(Platform.Version);
+    const os_version = platformOsVersion();
     return {
       os_name,
       os_version,
@@ -557,7 +591,38 @@ class EventFactory implements IEventFactory {
       (converted.properties as Record<string, unknown>).function_args = functionArgs;
     }
 
+    this.sanitizeEventUrls(converted);
+
     return converted;
+  }
+
+  /**
+   * Apply the app's `sanitizeUrl` hook to the URL fields of an outgoing event:
+   * `properties.url` and `context.referrer`.
+   *
+   * This is the last point before the queue, so it also covers values the
+   * capture-time filtering cannot reach: a referrer saved by an SDK version
+   * that had no hook, and a `url` property the app passed itself. A dropped
+   * value is removed, the same as a value that was never there.
+   */
+  private sanitizeEventUrls(event: IFormoEvent): void {
+    const sanitizeUrl = this.options?.sanitizeUrl;
+    if (typeof sanitizeUrl !== "function") return;
+
+    const fields: [Record<string, unknown> | null | undefined, string][] = [
+      [event.properties as Record<string, unknown> | null, "url"],
+      [event.context as Record<string, unknown> | null, "referrer"],
+    ];
+    for (const [holder, key] of fields) {
+      const value = holder?.[key];
+      if (!holder || typeof value !== "string" || !value) continue;
+      const sanitized = applyUrlSanitizer(sanitizeUrl, value);
+      if (sanitized) {
+        holder[key] = sanitized;
+      } else {
+        delete holder[key];
+      }
+    }
   }
 
   /**
