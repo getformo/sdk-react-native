@@ -51,7 +51,8 @@ import {
   toSnakeCase,
   mergeDeepRight,
   getStoredTrafficSource,
-  applyUrlSanitizer,
+  createUrlCleaner,
+  UrlCleaner,
 } from "../../utils";
 import { getCurrentTimeFormatted } from "../../utils/timestamp";
 import { generateUUID } from "../../utils/hash";
@@ -245,12 +246,14 @@ export function synthesizeUserAgent(info: {
 class EventFactory implements IEventFactory {
   private options?: Options;
   private canCreate: () => boolean;
+  private urlCleaner: UrlCleaner;
   /** Memoised device/app identity — see getDeviceInfo(). */
   private deviceInfoPromise?: Promise<DeviceInfoResult>;
 
   constructor(options?: Options, canCreate: () => boolean = () => true) {
     this.options = options;
     this.canCreate = canCreate;
+    this.urlCleaner = createUrlCleaner(options);
   }
 
   /**
@@ -597,18 +600,16 @@ class EventFactory implements IEventFactory {
   }
 
   /**
-   * Apply the app's `sanitizeUrl` hook to the URL fields of an outgoing event:
-   * `properties.url` and `context.referrer`.
+   * Clean the URL fields of an outgoing event, `properties.url` and
+   * `context.referrer`: run the app's `sanitizeUrl` hook, then strip the
+   * excluded query parameters.
    *
    * This is the last point before the queue, so it also covers values the
    * capture-time filtering cannot reach: a referrer saved by an SDK version
-   * that had no hook, and a `url` property the app passed itself. A dropped
+   * that had no filter, and a `url` property the app passed itself. A dropped
    * value is removed, the same as a value that was never there.
    */
   private sanitizeEventUrls(event: IFormoEvent): void {
-    const sanitizeUrl = this.options?.sanitizeUrl;
-    if (typeof sanitizeUrl !== "function") return;
-
     const fields: [Record<string, unknown> | null | undefined, string][] = [
       [event.properties as Record<string, unknown> | null, "url"],
       [event.context as Record<string, unknown> | null, "referrer"],
@@ -616,7 +617,8 @@ class EventFactory implements IEventFactory {
     for (const [holder, key] of fields) {
       const value = holder?.[key];
       if (!holder || typeof value !== "string" || !value) continue;
-      const sanitized = applyUrlSanitizer(sanitizeUrl, value);
+      const sanitized = this.urlCleaner.url(value);
+      if (sanitized === value) continue;
       if (sanitized) {
         holder[key] = sanitized;
       } else {
