@@ -458,9 +458,10 @@ export class FormoAnalytics implements IFormoAnalytics {
 
   /**
    * Parse and persist attribution from a URL that has ALREADY been through
-   * sanitizeUrl(). Split from the public method so the Linking hook, which
-   * sanitizes once and then feeds both attribution and `Deep Link Opened`,
-   * does not run the app's hook twice on the same link.
+   * sanitizeUrl(). Split from the public method so the Linking hook can
+   * decide once whether a link is dropped, and then feed the same result to
+   * both attribution and `Deep Link Opened`. (The hook can still see a URL
+   * again later, at the event boundary; Options.sanitizeUrl documents that.)
    */
   private applyTrafficSourceFromUrl(url: string): void {
     const trafficSource = parseTrafficSource(
